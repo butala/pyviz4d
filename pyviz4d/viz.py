@@ -294,6 +294,21 @@ class Viewer4D:
                     self._video_writer = None
                     print(f"\n[PyViz4D] Finished recording {self._recorded_frame_count} frames to {self._record_video_path}")
 
+    def save_screenshot(self, path, scale=1):
+        """Render the window and write a one-shot PNG snapshot to ``path``.
+
+        Pure VTK (``vtkWindowToImageFilter`` + ``vtkPNGWriter``) and independent
+        of :meth:`enable_recording`, which only emits ``frame_NNNNN.png`` from
+        inside the interactive :meth:`start` loop.  ``scale`` is the integer
+        pixel upsampling factor.
+        """
+        from .primitives import _render_window_to_png
+        if self.initial_camera_state is None:
+            # A fresh viewer has never rendered, so the default camera sits
+            # inside the scene.  Fit it once; a started viewer keeps its view.
+            self.ren.ResetCamera()
+        return _render_window_to_png(self.ren_win, path, scale=scale)
+
     def start(self, timer_interval_ms=16): # 16ms ~= 60 FPS
         self.iren.Initialize()
 

@@ -6,6 +6,8 @@ from .streamline import (gradient_field, vector_field_to_vtk, extract_centerline
 from .io import VTKSeriesWriter, parse_pvd
 from .series import IsosurfaceSeriesActor, PolyDataSeriesActor
 from .cityjson import read_cityjson
+from .primitives import (get_color, line_source, line_actor, point_actor,
+                         spherical_voxel_actor, render_to_png)
 
 __all__ = [
     "Viewer4D",
@@ -29,4 +31,10 @@ __all__ = [
     "IsosurfaceSeriesActor",
     "PolyDataSeriesActor",
     "read_cityjson",
+    "get_color",
+    "line_source",
+    "line_actor",
+    "point_actor",
+    "spherical_voxel_actor",
+    "render_to_png",
 ]

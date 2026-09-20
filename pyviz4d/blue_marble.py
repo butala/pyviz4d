@@ -1,5 +1,4 @@
 import logging
-import pooch
 
 logger = logging.getLogger('pyviz4d.blue_marble')
 
@@ -14,6 +13,11 @@ def fetch(path, resolution='low'):
     Fetch the Blue Marble texture from NASA servers using Pooch.
     Pooch will automatically cache the file and skip downloading if it already exists.
     """
+    # Imported lazily so that ``import pyviz4d`` does not require pooch: only
+    # the Earth texture path needs it, and non-Earth consumers (e.g. the
+    # SphericalCT viz layer) do not have it installed.
+    import pooch
+
     try:
         url = URL_MAP[resolution]
     except KeyError:

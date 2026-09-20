@@ -16,3 +16,6 @@ output.mp4
 *.mp4
 *.png
 !examples/*.png
+
+# Agent session logs (churn every turn)
+.agent-shell/

@@ -1,3 +1,18 @@
+"""Spherical grid spokes, drawn with pyviz4d's LATITUDE convention.
+
+``theta`` is latitude in [-pi/2, +pi/2] with the polar axis on ``z``::
+
+    x = r cos(theta) cos(phi)
+    y = r cos(theta) sin(phi)
+    z = r sin(theta)
+
+This matches :func:`pyviz4d.earth.sphere_to_cartesian` and the rest of the
+package.  It used to be colatitude (``z = r cos(theta)``, ``theta`` in
+``(0, pi)``), which is the one convention clash this package means to remove:
+same helper name, opposite meaning.  See
+``tests/test_primitives.py::test_spherical_grid_actor_is_latitude``.
+"""
+
 import vtk
 import numpy as np
 
@@ -6,7 +21,8 @@ def spherical_grid_actor(r1, r2, N_theta, N_phi):
     Generates a VTK Actor containing lines representing
     spokes in a spherical grid.
     """
-    theta_vec = np.linspace(0, np.pi, N_theta + 1)[1:-1]
+    # Interior latitudes only; the two poles are excluded, as before.
+    theta_vec = np.linspace(-np.pi / 2, np.pi / 2, N_theta + 1)[1:-1]
     phi_vec = np.linspace(0, 2 * np.pi, N_phi, endpoint=False) + np.pi / N_phi
 
     thetas, phis = np.meshgrid(theta_vec, phi_vec)
@@ -16,13 +32,13 @@ def spherical_grid_actor(r1, r2, N_theta, N_phi):
     r1s = np.full_like(thetas, r1)
     r2s = np.full_like(thetas, r2)
 
-    x1s = r1s * np.sin(thetas) * np.cos(phis)
-    y1s = r1s * np.sin(thetas) * np.sin(phis)
-    z1s = r1s * np.cos(thetas)
+    x1s = r1s * np.cos(thetas) * np.cos(phis)
+    y1s = r1s * np.cos(thetas) * np.sin(phis)
+    z1s = r1s * np.sin(thetas)
 
-    x2s = r2s * np.sin(thetas) * np.cos(phis)
-    y2s = r2s * np.sin(thetas) * np.sin(phis)
-    z2s = r2s * np.cos(thetas)
+    x2s = r2s * np.cos(thetas) * np.cos(phis)
+    y2s = r2s * np.cos(thetas) * np.sin(phis)
+    z2s = r2s * np.sin(thetas)
 
     points = vtk.vtkPoints()
     lines = vtk.vtkCellArray()
