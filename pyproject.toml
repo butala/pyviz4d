@@ -14,16 +14,22 @@ requires-python = ">=3.9"
 dependencies = [
     "vtk",
     "numpy",
-    "matplotlib",
-    "imageio",
-    "imageio[ffmpeg]",
-    "pooch",
-    "pyproj"
+    "matplotlib"
 ]
 
 [project.optional-dependencies]
+# core imports only: the four leaves below are imported lazily, so they are
+# extras rather than hard requirements. See README "Optional extras".
+earth = ["pooch"]                       # blue_marble.fetch (EarthViewer4D / earth_actor)
+geo = ["pooch", "pyproj"]               # cityjson.read_cityjson + examples/demo_cityjson.py
+video = ["imageio", "imageio[ffmpeg]"]  # Viewer4D.enable_recording (frames_dir and/or video_path)
+all = ["pooch", "pyproj", "imageio", "imageio[ffmpeg]"]
 dev = [
-    "pytest"
+    "pytest",
+    "pooch",
+    "pyproj",
+    "imageio",
+    "imageio[ffmpeg]"
 ]
 phiflow = [
     "phiflow",

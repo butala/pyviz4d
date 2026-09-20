@@ -4,11 +4,36 @@ A modern, VTK-backed (via PyVista) 4-D spatio-temporal data visualization tool.
 
 ## Installation
 
-Install using `uv`:
+The core install is deliberately small — `vtk` + `numpy` + `matplotlib`, which is
+enough to draw wireframes, voxel cages and points, and to write offscreen PNGs:
 
 ```bash
-uv pip install -e .
+uv pip install pyviz4d
 ```
+
+```bash
+# from a checkout, for development:
+uv pip install -e ".[dev]"
+```
+
+Everything heavier (Earth textures, CityJSON/CRS, video recording, PhiFlow) is
+imported lazily and therefore lives behind extras. Ask for only what you use:
+
+| Extra | Pulls in | Unlocks |
+| --- | --- | --- |
+| `earth` | `pooch` | `blue_marble.fetch()` → `EarthViewer4D` / `earth_actor` |
+| `geo` | `pooch`, `pyproj` | `cityjson.read_cityjson()` (also `examples/demo_cityjson.py`) |
+| `video` | `imageio`, `imageio[ffmpeg]` | `Viewer4D.enable_recording()` — `frames_dir` needs plain `imageio`, `video_path` needs ffmpeg |
+| `all` | all four leaves | everything except the PhiFlow demo |
+| `phiflow` | `phiflow`, `scipy`, `tqdm`, `matplotlib`, `jax` | `examples/demo_phiflow.py` |
+| `dev` | `pytest` + the four leaves | running `tests/` |
+
+```bash
+uv pip install "pyviz4d[all]"      # or "pyviz4d[earth]", "pyviz4d[geo]", "pyviz4d[video]"
+```
+
+`matplotlib` stays in the core set: `primitives.get_color`, `volume.matplotlib_ctf`
+and `streamline` import it at module level.
 
 ## Running Examples
 

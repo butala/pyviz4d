@@ -2472,24 +2472,44 @@ name = "pyviz4d"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "imageio", version = "2.37.2", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version < '3.10'" },
-    { name = "imageio", version = "2.37.4", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version >= '3.10'" },
+    { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "pooch" },
-    { name = "pyproj", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
-    { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "vtk", version = "9.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "vtk", version = "9.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "imageio", version = "2.37.2", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version < '3.10'" },
+    { name = "imageio", version = "2.37.4", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version >= '3.10'" },
+    { name = "pooch" },
+    { name = "pyproj", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
 dev = [
+    { name = "imageio", version = "2.37.2", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version < '3.10'" },
+    { name = "imageio", version = "2.37.4", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version >= '3.10'" },
+    { name = "pooch" },
+    { name = "pyproj", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+earth = [
+    { name = "pooch" },
+]
+geo = [
+    { name = "pooch" },
+    { name = "pyproj", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 phiflow = [
     { name = "jax", version = "0.4.30", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -2506,23 +2526,37 @@ phiflow = [
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "tqdm" },
 ]
+video = [
+    { name = "imageio", version = "2.37.2", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version < '3.10'" },
+    { name = "imageio", version = "2.37.4", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version >= '3.10'" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "imageio" },
-    { name = "imageio", extras = ["ffmpeg"] },
+    { name = "imageio", marker = "extra == 'all'" },
+    { name = "imageio", marker = "extra == 'dev'" },
+    { name = "imageio", marker = "extra == 'video'" },
+    { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'all'" },
+    { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'dev'" },
+    { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'video'" },
     { name = "jax", marker = "extra == 'phiflow'" },
+    { name = "matplotlib" },
     { name = "matplotlib", marker = "extra == 'phiflow'" },
     { name = "numpy" },
     { name = "phiflow", marker = "extra == 'phiflow'" },
-    { name = "pooch" },
-    { name = "pyproj" },
+    { name = "pooch", marker = "extra == 'all'" },
+    { name = "pooch", marker = "extra == 'dev'" },
+    { name = "pooch", marker = "extra == 'earth'" },
+    { name = "pooch", marker = "extra == 'geo'" },
+    { name = "pyproj", marker = "extra == 'all'" },
+    { name = "pyproj", marker = "extra == 'dev'" },
+    { name = "pyproj", marker = "extra == 'geo'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "scipy", marker = "extra == 'phiflow'" },
     { name = "tqdm", marker = "extra == 'phiflow'" },
     { name = "vtk" },
 ]
-provides-extras = ["dev", "phiflow"]
+provides-extras = ["earth", "geo", "video", "all", "dev", "phiflow"]
 
 [[package]]
 name = "requests"
