@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyviz4d"
+version = "0.1.0"
+description = "4-D scientific spatio-temporal data visualization based on pure VTK"
+authors = [
+    { name = "Author Name", email = "author@example.com" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "vtk",
+    "numpy",
+    "imageio",
+    "imageio[ffmpeg]",
+    "pooch",
+    "pyproj"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest"
+]
+phiflow = [
+    "phiflow",
+    "scipy",
+    "tqdm",
+    "matplotlib",
+    "jax"
+]
+
+[tool.setuptools.packages.find]
+include = ["pyviz4d*"]

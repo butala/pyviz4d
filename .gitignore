@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Large/local artifacts (not source)
+data/
+sim_output/
+output.mp4
+*.mp4
+*.png
+!examples/*.png
