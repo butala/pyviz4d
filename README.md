@@ -128,3 +128,23 @@ uv run --with vtk --with numpy --with scipy --with matplotlib \
 See `examples/plumeviz_preview.png` for a rendered frame, and
 `examples/demo_plumeviz.py` for the full parameter surface (colormap, opacity
 transfer function, isovalue, segmentation threshold, dilation, streamlines).
+
+## LoD1 city models from OpenStreetMap
+
+Three worked examples build LoD1 block models from live OSM data and render them
+with pyviz4d, then dump a CityJSON 1.1 model you can open anywhere:
+
+```bash
+uv sync --extra geo        # these examples need requests (pulled in by pooch)
+python examples/demo_lod1_lian.py      # Li'an Intl Education Zone, Hainan
+python examples/demo_lod1_pudong.py    # Lujiazui skyline, Shanghai (real 632 m heights)
+python examples/demo_lod1_glasgow.py   # James Watt Building, University of Glasgow
+python examples/demo_lod1_view.py      # interactive viewer for any of the CityJSON files
+```
+
+Each generator geocodes its place, caches the raw OSM response, writes a PNG plus
+``<place>_lod1.city.json`` and prints the tallest buildings.  All outputs land in
+``data/`` (gitignored), so running them never dirties the working tree.  Heights
+come from OSM ``height``/``building:levels`` where tagged, otherwise a per-type
+default -- check the printed ``height source`` breakdown before trusting the
+vertical dimension.  Building data is (c) OpenStreetMap contributors, ODbL 1.0.
