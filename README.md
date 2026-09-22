@@ -90,6 +90,10 @@ this codebase is written to avoid.
 uv sync --extra all          # once; or --extra dev for the test suite
 ```
 
+The examples that fetch OpenStreetMap data additionally need `requests`, which
+only arrives with an extra — pass `--extra geo` (or `--extra all`) on the
+command line, or run them through `.venv/bin/python` after syncing an extra.
+
 | Example | What it shows |
 | --- | --- |
 | `demo_4d.py` | Earth texture with a time animation |
@@ -152,10 +156,15 @@ Three worked examples geocode a place, pull OSM footprints, extrude LoD1 solids
 and write a CityJSON 1.1 model plus a PNG:
 
 ```bash
-uv run python examples/demo_lod1_lian.py      # Li'an Education Zone, Hainan
-uv run python examples/demo_lod1_pudong.py    # Lujiazui, Shanghai (real 632 m heights)
-uv run python examples/demo_lod1_glasgow.py   # James Watt Building, Glasgow
-uv run python examples/demo_lod1_view.py      # interactive viewer for any of them
+# --extra geo is required: these scripts use `requests`, which arrives with pooch
+uv run --extra geo python examples/demo_lod1_pudong.py   # Lujiazui, Shanghai (real 632 m heights)
+uv run --extra geo python examples/demo_lod1_lian.py     # Li'an Education Zone, Hainan
+uv run --extra geo python examples/demo_lod1_glasgow.py  # James Watt Building, Glasgow
+uv run --extra geo python examples/demo_lod1_glasgow.py --interactive   # window instead of a PNG
+
+# interactive viewer for any of the CityJSON models they write
+uv run --extra geo python examples/demo_lod1_view.py \
+    --cityjson data/pudong/pudong_lod1.city.json
 ```
 
 Heights come from OSM `height` / `building:levels` where tagged, otherwise a
