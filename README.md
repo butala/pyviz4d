@@ -106,10 +106,28 @@ command line, or run them through `.venv/bin/python` after syncing an extra.
 | `validate_wgs84.py` | WGS84 conversion checks |
 | `demo_lod1_*.py` | LoD1 city models from OpenStreetMap (below) |
 
+Every demo opens an interactive window (left-drag rotate, middle/shift-drag pan,
+scroll zoom, `q` quit) except `demo_plumeviz_fig3.py`, whose `--mode` runs and the
+`demo_lod1_*` generators write files instead. Each command carries whatever that
+script needs beyond the core install: `--extra` for a declared extra, `--with`
+for the few light packages no extra declares.
+
 ```bash
-uv run python examples/demo_grid.py --nrows 1 --ncols 2
-uv run python examples/demo_cityjson.py
+uv run --extra earth python examples/demo_4d.py                      # Earth + animation
+uv run python examples/demo_grid.py --nrows 1 --ncols 2              # linked multi-view
+uv run --extra geo python examples/demo_cityjson.py                  # CityJSON city model
+uv run --with tqdm python examples/demo_decoupled_pipeline.py        # write + lazy-load series
+uv run --extra phiflow python examples/demo_phiflow.py               # PhiFlow smoke plume
+uv run --with scipy python examples/demo_plumeviz.py                 # COVIS volume + streamlines
+uv run --with scipy python examples/demo_plumeviz_fig3.py            # paper-style static figure
+uv run --extra earth python examples/validate_wgs84.py               # visual WGS84 check
+uv run --extra geo python examples/demo_lod1_pudong.py               # OSM -> LoD1 (Shanghai)
 ```
+
+`demo_4d.py --record` (writes `output.mp4`) additionally needs `--extra video`.
+`demo_decoupled_pipeline.py --viz-only` reuses a series already under
+`sim_output/`, and the two PlumeViz demos expect the COVIS contest frames under
+`data/covis` (override with `--data-dir`).
 
 ### Paper-faithful PlumeViz figures
 
@@ -128,11 +146,11 @@ the transfer function, and frames the rising column from a near-side 3/4 camera.
 
 ```bash
 # Figure 5 style: RK4 velocity streamlines, coloured by speed
-uv run python examples/demo_plumeviz_fig3.py --mode streamlines \
+uv run --with scipy python examples/demo_plumeviz_fig3.py --mode streamlines \
     --out examples/plumeviz_fig5.png
 
 # Figure 6 style: grey vs rainbow colormap, side by side
-uv run python examples/demo_plumeviz_fig3.py --mode colormaps \
+uv run --with scipy python examples/demo_plumeviz_fig3.py --mode colormaps \
     --colormap plume_gray --compare-colormap gist_rainbow \
     --size 560 900 --out examples/plumeviz_fig6.png
 ```
@@ -144,10 +162,10 @@ demo over the full parameter surface (colormap, opacity transfer function,
 isovalue, segmentation threshold, dilation, streamlines):
 
 ```bash
-uv run python examples/demo_plumeviz.py --ncols 2 \
+uv run --with scipy python examples/demo_plumeviz.py --ncols 2 \
     --colormap plume_gray --colormap2 gist_rainbow      # Figure 6 style
-uv run python examples/demo_plumeviz.py --streamlines    # Figure 4 style
-uv run python examples/demo_plumeviz.py --velocity       # Figure 5 style
+uv run --with scipy python examples/demo_plumeviz.py --streamlines    # Figure 4 style
+uv run --with scipy python examples/demo_plumeviz.py --velocity       # Figure 5 style
 ```
 
 ### LoD1 city models from OpenStreetMap
