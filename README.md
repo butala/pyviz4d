@@ -190,7 +190,10 @@ uv run --extra geo python examples/demo_lod1_view.py \
 Heights come from OSM `height` / `building:levels` where tagged, otherwise a
 per-type default; each run prints the `height source` breakdown, so check it
 before trusting the vertical dimension. Outputs land in `data/` (gitignored), so
-running the examples never dirties the tree. Building data is
+running the examples never dirties the tree. Each solid is closed — floor, wall
+quads and roof — wound counter-clockwise seen from outside, and each run prints
+`0 boundary edges (watertight)`. `--interactive` opens the model on the same
+view as the PNG rather than VTK's default camera. Building data is
 &copy; OpenStreetMap contributors, [ODbL 1.0](https://www.openstreetmap.org/copyright).
 
 ## Tests

@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 """Lujiazui (Pudong, Shanghai) skyline in pyviz4d, from OSM footprints + heights.
 
-    python data/pudong/make_pudong.py [--png out.png]
+    uv run --extra geo python examples/demo_lod1_pudong.py [--interactive]
 
 Writes a CityJSON LoD1 model, an offscreen PNG, and prints the tallest
 buildings.  Heights are real where OSM has them (`height`), else
@@ -78,6 +78,36 @@ def clean(p):
     return p
 
 
+def ring_area(p):
+    """Signed area of a ring (positive = counter-clockwise)."""
+    x, y = p[:, 0], p[:, 1]
+    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+
+def ccw(p):
+    """OSM rings come in arbitrary order (Lujiazui is 572 CCW / 148 CW); the
+    wall/roof/floor winding below is only outward-facing for a CCW ring."""
+    return p[::-1] if ring_area(p) < 0 else p
+
+
+def viewpoint(ren, cam):
+    """Give a Viewer4D the same view the offscreen render uses.
+
+    Viewer4D never fits its camera: the renderer starts at VTK's default
+    position (0, 0, 1) looking down -z, i.e. 1 m above the model origin with
+    the whole city behind the near plane, and start() latches that as the
+    initial view (so the `r` hotkey restores the empty one).  render_to_png()
+    ends with ren.ResetCamera(), which keeps only a camera's *direction* and
+    view-up, so copy those across and let the renderer refit the distance.
+    """
+    vcam = ren.GetActiveCamera()
+    vcam.SetPosition(*cam.GetPosition())
+    vcam.SetFocalPoint(*cam.GetFocalPoint())
+    vcam.SetViewUp(*cam.GetViewUp())
+    ren.ResetCamera()
+    ren.ResetCameraClippingRange()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--png", default=str(HERE / "pudong.png"))
@@ -108,6 +138,7 @@ def main():
         p = clean(np.asarray(pts))
         if len(p) < 3:
             continue
+        p = ccw(p)
         h, src = height_of(tags)
         buildings.append((w.get("id"), p, h, src, tags))
     for rel in root.findall("relation"):
@@ -150,8 +181,10 @@ def main():
         n = len(p)
         bot = [vid(lon[i], lat[i], 0.0) for i in range(n)]
         top = [vid(lon[i], lat[i], h) for i in range(n)]
-        surfaces = [bot] + [[bot[i], bot[(i + 1) % n],
-                             top[(i + 1) % n], top[i]] for i in range(n)] + [top[::-1]]
+        surfaces = ([bot[::-1]]                                 # floor, normal down
+                    + [[bot[i], bot[(i + 1) % n],
+                        top[(i + 1) % n], top[i]] for i in range(n)]   # walls, out
+                    + [top])                                    # roof, normal up
         cos["b" + wid] = {"type": "Building",
                           "attributes": {"height_m": round(h, 2), "height_source": src,
                                          "osm_way": wid, "name": tags.get("name"),
@@ -174,25 +207,26 @@ def main():
     cmap = colormaps["turbo"]
     pts, cells, cols = vtk.vtkPoints(), vtk.vtkCellArray(), []
     for wid, p, h, src, tags in buildings:
-        e = enu(p)
+        e = enu(p)                                # p is CCW, so all normals point out
         n = len(e)
-        base = pts.InsertNextPoint(e[0, 0], e[0, 1], 0.0)
-        topids = []
-        for i in range(n):
-            if i:
-                pts.InsertNextPoint(e[i, 0], e[i, 1], 0.0)
-            topids.append(pts.InsertNextPoint(e[i, 0], e[i, 1], h))
+        bot = [pts.InsertNextPoint(e[i, 0], e[i, 1], 0.0) for i in range(n)]
+        top = [pts.InsertNextPoint(e[i, 0], e[i, 1], h) for i in range(n)]
         r, g, b, _ = cmap(norm(h))
         rgb = (int(r * 255), int(g * 255), int(b * 255), 255)
-        for i in range(n):
+        for i in range(n):                        # walls
             j = (i + 1) % n
             ids = vtk.vtkIdList()
-            for k in (base + i, base + j, topids[j], topids[i]):
+            for k in (bot[i], bot[j], top[j], top[i]):
                 ids.InsertNextId(k)
             cells.InsertNextCell(ids)
             cols.append(rgb)
         ids = vtk.vtkIdList()                     # roof
-        for k in reversed(topids):
+        for k in top:
+            ids.InsertNextId(k)
+        cells.InsertNextCell(ids)
+        cols.append(rgb)
+        ids = vtk.vtkIdList()                     # floor: closes the shell
+        for k in reversed(bot):
             ids.InsertNextId(k)
         cells.InsertNextCell(ids)
         cols.append(rgb)
@@ -206,6 +240,18 @@ def main():
     for c in cols:
         rgba.InsertNextTuple4(*c)
     pd.GetCellData().SetScalars(rgba)
+
+    fe = vtk.vtkFeatureEdges()                    # 0 boundary edges = closed shells
+    fe.SetInputData(pd)
+    fe.BoundaryEdgesOn()
+    fe.FeatureEdgesOff()
+    fe.NonManifoldEdgesOff()
+    fe.ManifoldEdgesOff()
+    fe.Update()
+    n_open = fe.GetOutput().GetNumberOfCells()
+    print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "
+          f"({'watertight' if n_open == 0 else 'NOT watertight'})")
+
     mapper = vtk.vtkPolyDataMapper()
     mapper.SetInputData(pd)
     mapper.SetScalarModeToUseCellData()
@@ -231,18 +277,18 @@ def main():
     cam.SetFocalPoint(cx, cy, 0.30 * span)
     cam.SetPosition(cx + 0.62 * span, cy - 0.95 * span, 0.58 * span)
     cam.SetViewUp(0, 0, 1)
-    # NOTE: only the camera's *direction*, focal point and view-up survive --
+    # NOTE: only the camera's *direction* and view-up survive --
     # render_to_png() ends with ren.ResetCamera(), which recomputes the distance
     # from the current view angle and therefore cancels any SetPosition radius
     # or pre-applied Zoom().  For a tighter frame, use the interactive viewer
-    # (mouse zoom) or move the focal point; a `zoom=` kwarg on render_to_png
-    # would fix this properly.
+    # (mouse zoom) or move the focal point.
 
     from pyviz4d import render_to_png
     if args.interactive:
         from pyviz4d import Viewer4D
         viewer = Viewer4D(size=(W, H), bg_color=(0.12, 0.12, 0.14))
         viewer.add_actor(actor)
+        viewpoint(viewer.ren, cam)   # else the window opens on the default camera
         print("window: left-drag rotate, middle/shift-drag pan, scroll zoom, q quit")
         viewer.start()
         return 0

@@ -3,9 +3,11 @@
 """Build a LoD1 CityJSON model of the Lingshui Li'an International Education
 Innovation Pilot Zone (陵水黎安国际教育创新试验区, Hainan, China) from OSM.
 
+    uv run --extra geo python examples/demo_lod1_lian.py [--interactive]
+
 Footprints: OSM ways tagged `building`. Height: `height` if present, else
 `building:levels` * 3.0 m, else a per-type default. Geometry: one Solid per
-building (bottom ring, one vertical quad per footprint edge, top ring).
+building, closed (floor, one vertical quad per footprint edge, roof).
 Coordinates: WGS84 (OSM), local ENU metres for rendering, CityJSON transform
 for storage.  Output is written under data/ (gitignored).
 """
@@ -96,6 +98,33 @@ def ring_area(ring):
     return 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
 
 
+def ccw(ring):
+    """Return the ring wound counter-clockwise.  OSM rings come in arbitrary
+    order, and the wall/roof/floor winding below is outward-facing only for a
+    CCW ring (signed area positive)."""
+    x, y = ring[:, 0], ring[:, 1]
+    s = 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+    return ring[::-1] if s < 0 else ring
+
+
+def viewpoint(ren, cam):
+    """Give a Viewer4D the same view the offscreen render uses.
+
+    Viewer4D never fits its camera: the renderer starts at VTK's default
+    position (0, 0, 1) looking down -z, i.e. 1 m above the model origin with
+    the whole scene behind the near plane, and start() latches that as the
+    initial view (so the `r` hotkey restores the empty one).  render_to_png()
+    ends with ren.ResetCamera(), which keeps only a camera's *direction* and
+    view-up, so copy those across and let the renderer refit the distance.
+    """
+    vcam = ren.GetActiveCamera()
+    vcam.SetPosition(*cam.GetPosition())
+    vcam.SetFocalPoint(*cam.GetFocalPoint())
+    vcam.SetViewUp(*cam.GetViewUp())
+    ren.ResetCamera()
+    ren.ResetCameraClippingRange()
+
+
 def main():
     import argparse
     from pathlib import Path as pathlib_path
@@ -138,7 +167,7 @@ def main():
             p = p[:-1]
         if len(p) < 3 or not inside.contains_point(p.mean(axis=0)):
             continue
-        polys.append((wid, p, tags))
+        polys.append((wid, ccw(p), tags))
     print(f"ways={len(ways)}  building relations(skipped, multipolygon)={n_rel}")
     print(f"buildings inside zone: {len(polys)}  (degenerate skipped {skipped})")
 
@@ -175,11 +204,11 @@ def main():
         n = len(lon)
         bot = [vid(lon[i], lat[i], 0.0) for i in range(n)]
         top = [vid(lon[i], lat[i], h) for i in range(n)]
-        surfaces = [bot]                                   # ground
-        for i in range(n):                                 # walls
+        surfaces = [bot[::-1]]                             # floor, normal down
+        for i in range(n):                                 # walls, normals out
             j = (i + 1) % n
             surfaces.append([bot[i], bot[j], top[j], top[i]])
-        surfaces.append(top[::-1])                         # roof
+        surfaces.append(top)                               # roof, normal up
         co["b" + str(wid)] = {
             "type": "Building",
             "attributes": {
@@ -223,23 +252,40 @@ def main():
     norm = Normalize(hs.min(), hs.max())
     pts, cells, scal = vtk.vtkPoints(), vtk.vtkCellArray(), []
     for (wid, p, h, tags, src), area in zip(enu_polys, areas):
-        n = len(p)
-        base = pts.InsertNextPoint(p[0, 0], p[0, 1], 0.0)
-        for i in range(1, n):
-            pts.InsertNextPoint(p[i, 0], p[i, 1], 0.0)
-        top = vtk.vtkIdList()
-        for i in range(n):
-            top.InsertNextId(pts.InsertNextPoint(p[i, 0], p[i, 1], h))
-        for i in range(n):
+        n = len(p)                                # CCW, so all normals point out
+        bot = [pts.InsertNextPoint(p[i, 0], p[i, 1], 0.0) for i in range(n)]
+        top = [pts.InsertNextPoint(p[i, 0], p[i, 1], h) for i in range(n)]
+        for i in range(n):                        # walls
             j = (i + 1) % n
             quad = vtk.vtkIdList()
-            for k in (base + i, base + j, top.GetId(j), top.GetId(i)):
+            for k in (bot[i], bot[j], top[j], top[i]):
                 quad.InsertNextId(k)
             cells.InsertNextCell(quad)
             scal.append(h)
+        quad = vtk.vtkIdList()                    # roof
+        for k in top:
+            quad.InsertNextId(k)
+        cells.InsertNextCell(quad)
+        scal.append(h)
+        quad = vtk.vtkIdList()                    # floor: closes the shell
+        for k in reversed(bot):
+            quad.InsertNextId(k)
+        cells.InsertNextCell(quad)
+        scal.append(h)
     pd = vtk.vtkPolyData()
     pd.SetPoints(pts)
     pd.SetPolys(cells)
+
+    fe = vtk.vtkFeatureEdges()                    # 0 boundary edges = closed shells
+    fe.SetInputData(pd)
+    fe.BoundaryEdgesOn()
+    fe.FeatureEdgesOff()
+    fe.NonManifoldEdgesOff()
+    fe.ManifoldEdgesOff()
+    fe.Update()
+    n_open = fe.GetOutput().GetNumberOfCells()
+    print(f"shells: {len(enu_polys)} buildings, {n_open} boundary edges "
+          f"({'watertight' if n_open == 0 else 'NOT watertight'})")
     rgba = vtk.vtkUnsignedCharArray()
     rgba.SetNumberOfComponents(4)
     rgba.SetName("colors")
@@ -274,6 +320,7 @@ def main():
         from pyviz4d import Viewer4D
         viewer = Viewer4D(size=(W, H), bg_color=(0.12, 0.12, 0.14))
         viewer.add_actor(actor)
+        viewpoint(viewer.ren, cam)   # else the window opens on the default camera
         print("window: left-drag rotate, middle/shift-drag pan, scroll zoom, q quit")
         viewer.start()
         return 0
@@ -281,7 +328,8 @@ def main():
     png = pathlib_path(args.png) if args.png else OUT / "lian_lod1.png"
     render_to_png([actor], str(png), size=(W, H), scale=1, camera=cam)
     print(f"PNG: {png} ({png.stat().st_size/1e3:.0f} kB), "
-          f"{pd.GetNumberOfPoints()} points {pd.GetNumberOfPolys()} wall quads")
+          f"{pd.GetNumberOfPoints()} points "
+          f"{pd.GetNumberOfPolys()} faces (walls + roof + floor)")
     return 0
 
 

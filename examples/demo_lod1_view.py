@@ -2,8 +2,8 @@
 #!/usr/bin/env python3
 """View the Li'an LoD1 CityJSON model interactively with pyviz4d.
 
-    python data/lian/view_lian_lod1.py            # interactive window
-    python data/lian/view_lian_lod1.py --png x.png  # offscreen check (no display)
+    uv run --extra geo python examples/demo_lod1_view.py            # window
+    uv run --extra geo python examples/demo_lod1_view.py --png x.png  # offscreen
 
 Reads only the CityJSON (no network).  Mouse: rotate = left drag,
 pan = middle/shift+left, zoom = right drag or scroll.  Press `q` to quit.
@@ -116,6 +116,17 @@ def main():
     from pyviz4d import Viewer4D
     viewer = Viewer4D(size=(w, h), bg_color=(0.12, 0.12, 0.14))
     viewer.add_actor(actor)                 # same actor as the offscreen path
+    # Viewer4D's renderer starts at VTK's default camera -- position (0, 0, 1)
+    # looking straight down -z, i.e. 1 m above the origin with the model behind
+    # the near plane -- and start() latches that as the initial view.  Fit, then
+    # tilt off the vertical so the extrusion is visible.
+    ren = viewer.ren
+    ren.ResetCamera()
+    cam = ren.GetActiveCamera()
+    cam.Azimuth(-35)                        # rotate 35 deg about the model's axis
+    cam.Elevation(28)                       # and look down on it from above
+    cam.OrthogonalizeViewUp()
+    ren.ResetCameraClippingRange()
     print("window: left-drag rotate, middle/shift-drag pan, scroll zoom, q quit")
     viewer.start()                          # blocks in the interactor loop
     return 0
