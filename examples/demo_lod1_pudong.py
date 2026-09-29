@@ -82,6 +82,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--png", default=str(HERE / "pudong.png"))
     ap.add_argument("--size", default="1600x1000")
+    ap.add_argument("--interactive", action="store_true",
+                    help="open a Viewer4D window instead of writing a PNG")
     args = ap.parse_args()
     W, H = (int(v) for v in args.size.lower().split("x"))
 
@@ -237,6 +239,14 @@ def main():
     # would fix this properly.
 
     from pyviz4d import render_to_png
+    if args.interactive:
+        from pyviz4d import Viewer4D
+        viewer = Viewer4D(size=(W, H), bg_color=(0.12, 0.12, 0.14))
+        viewer.add_actor(actor)
+        print("window: left-drag rotate, middle/shift-drag pan, scroll zoom, q quit")
+        viewer.start()
+        return 0
+
     render_to_png([actor], args.png, size=(W, H), camera=cam)
 
     import imageio.v2 as iio

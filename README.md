@@ -178,7 +178,9 @@ and write a CityJSON 1.1 model plus a PNG:
 uv run --extra geo python examples/demo_lod1_pudong.py   # Lujiazui, Shanghai (real 632 m heights)
 uv run --extra geo python examples/demo_lod1_lian.py     # Li'an Education Zone, Hainan
 uv run --extra geo python examples/demo_lod1_glasgow.py  # James Watt Building, Glasgow
-uv run --extra geo python examples/demo_lod1_glasgow.py --interactive   # window instead of a PNG
+
+# every generator takes --interactive for a window instead of a PNG
+uv run --extra geo python examples/demo_lod1_pudong.py --interactive
 
 # interactive viewer for any of the CityJSON models they write
 uv run --extra geo python examples/demo_lod1_view.py \

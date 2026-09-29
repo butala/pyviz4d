@@ -97,6 +97,15 @@ def ring_area(ring):
 
 
 def main():
+    import argparse
+    from pathlib import Path as pathlib_path
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--png", default=None, help="output PNG path")
+    ap.add_argument("--size", default="1600x1000")
+    ap.add_argument("--interactive", action="store_true",
+                    help="open a Viewer4D window instead of writing a PNG")
+    args = ap.parse_args()
+    W, H = (int(v) for v in args.size.lower().split("x"))
     ring, hit = zone_ring()
     lat0 = ring[:, 1].mean()
     lon0 = ring[:, 0].mean()
@@ -261,8 +270,16 @@ def main():
     cam.SetFocalPoint(cx, cy, hs.max() * 0.4)
     cam.SetPosition(cx + 0.75 * span, cy - 0.9 * span, 0.75 * span)
     cam.SetViewUp(0, 0, 1)
-    png = OUT / "lian_lod1.png"
-    render_to_png([actor], str(png), size=(1600, 1000), scale=1, camera=cam)
+    if args.interactive:
+        from pyviz4d import Viewer4D
+        viewer = Viewer4D(size=(W, H), bg_color=(0.12, 0.12, 0.14))
+        viewer.add_actor(actor)
+        print("window: left-drag rotate, middle/shift-drag pan, scroll zoom, q quit")
+        viewer.start()
+        return 0
+
+    png = pathlib_path(args.png) if args.png else OUT / "lian_lod1.png"
+    render_to_png([actor], str(png), size=(W, H), scale=1, camera=cam)
     print(f"PNG: {png} ({png.stat().st_size/1e3:.0f} kB), "
           f"{pd.GetNumberOfPoints()} points {pd.GetNumberOfPolys()} wall quads")
     return 0
