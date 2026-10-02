@@ -204,7 +204,9 @@ already publishes a LoD1 `Solid` per building for every US county, so the script
 downloads the two Champaign County shards once (~68 MB, cached under
 `data/uiuc/`), keeps the campus bbox, and rebuilds the shells so the winding is
 outward-facing throughout: OCM's own winding is not uniform, and a few per cent
-of the campus solids arrive inside-out. Its heights are *modelled*, not
+of the campus solids arrive inside-out. `--highlight ece` paints the ECE
+Building (4622 m², matched to its OSM centre within 9 m) magenta against a
+desaturated model, and `h` toggles it live in the `--interactive` window. Its heights are *modelled*, not
 measured, and the tail is long enough that `--max-height` (default 120 m) drops
 the worst mis-models. Building data is &copy; Open City Model / BuildZero,
 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/), from Microsoft

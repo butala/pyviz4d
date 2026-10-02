@@ -49,6 +49,11 @@ UA = {"User-Agent": "pyviz4d-uiuc/0.1 (research)"}
 M_PER_DEG_LAT = 110574.0
 MIN_HEIGHT = 2.0
 
+# Landmarks that --highlight can pick out, as (lat, lon) of the building's
+# centre.  OSM/Nominatim has the ECE Building (306 N Wright St, 230,000 sq ft
+# over five floors) at 40.11493, -88.22806.
+LANDMARKS = {"ece": (40.11493, -88.22806)}
+
 
 def fetch(name):
     """Download one county shard once; the county is ~68 MB, so always cache."""
@@ -196,6 +201,11 @@ def main():
                          "the modelled heights have a long tail of mis-models")
     ap.add_argument("--interactive", action="store_true",
                     help="open a Viewer4D window instead of writing a PNG")
+    ap.add_argument("--highlight", default="ece", choices=sorted(LANDMARKS),
+                    help="landmark to paint bright (default ece); `h` in the "
+                         "interactive window toggles it")
+    ap.add_argument("--no-highlight", action="store_true",
+                    help="start with no landmark highlighted")
     args = ap.parse_args()
     W, H = (int(v) for v in args.size.lower().split("x"))
 
@@ -314,6 +324,58 @@ def main():
     print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "
           f"({'watertight' if n_open == 0 else 'NOT watertight'})")
 
+    # ---- landmark highlight: a separate actor, so `h` can toggle it ----
+    hi = None
+    if not args.no_highlight:
+        lat, lon = LANDMARKS[args.highlight]
+        want = np.array([(lon - lon0) * M_PER_DEG_LAT * coslat,
+                         (lat - lat0) * M_PER_DEG_LAT])
+        near = [np.hypot(*(enu(b[1]).mean(0) - want)) for b in buildings]
+        k = int(np.argmin(near))
+        oid, p, h, src, a = buildings[k]
+        print(f"highlight {args.highlight}: ubid {a.get('ubid')} "
+              f"({h:.1f} m, {a.get('area', 0):.0f} m2), {near[k]:.0f} m from "
+              f"the landmark")
+
+        e = enu(p)
+        n = len(e)
+        hpts, hpolys, hlines = vtk.vtkPoints(), vtk.vtkCellArray(), vtk.vtkCellArray()
+        bot = [hpts.InsertNextPoint(e[i, 0], e[i, 1], 0.0) for i in range(n)]
+        top = [hpts.InsertNextPoint(e[i, 0], e[i, 1], h) for i in range(n)]
+        for i in range(n):                       # walls and roof, floor omitted
+            j = (i + 1) % n
+            ids = vtk.vtkIdList()
+            for v in (bot[i], bot[j], top[j], top[i]):
+                ids.InsertNextId(v)
+            hpolys.InsertNextCell(ids)
+        ids = vtk.vtkIdList()
+        for v in top:
+            ids.InsertNextId(v)
+        hpolys.InsertNextCell(ids)
+
+        cx, cy = e.mean(0)                       # a pole, so the pick reads
+        pole = vtk.vtkIdList()                   # from any angle and any zoom
+        pole.InsertNextId(hpts.InsertNextPoint(cx, cy, h))
+        pole.InsertNextId(hpts.InsertNextPoint(cx, cy, h + 0.35 * heights.max()))
+        hlines.InsertNextCell(pole)
+
+        hpd = vtk.vtkPolyData()
+        hpd.SetPoints(hpts)
+        hpd.SetPolys(hpolys)
+        hpd.SetLines(hlines)
+        hm = vtk.vtkPolyDataMapper()
+        hm.SetInputData(hpd)
+        hm.SetResolveCoincidentTopologyToPolygonOffset()   # no z-fight on the faces
+        hi = vtk.vtkActor()
+        hi.SetMapper(hm)
+        hp = hi.GetProperty()
+        hp.SetColor(1.0, 0.0, 0.6)               # magenta: absent from turbo
+        hp.SetEdgeVisibility(1)
+        hp.SetEdgeColor(1.0, 1.0, 1.0)
+        hp.SetLineWidth(1.5)
+        hp.SetAmbient(0.7)
+        hp.SetDiffuse(0.6)
+
     mapper = vtk.vtkPolyDataMapper()
     mapper.SetInputData(pd)
     mapper.SetScalarModeToUseCellData()
@@ -347,12 +409,24 @@ def main():
         from pyviz4d import Viewer4D
         viewer = Viewer4D(size=(W, H), bg_color=(0.12, 0.12, 0.14))
         viewer.add_actor(actor)
+        if hi is not None:
+            viewer.add_actor(hi)
+
+            def on_key(obj, _event):
+                if obj.GetKeySym().lower() == "h":
+                    hi.SetVisibility(0 if hi.GetVisibility() else 1)
+                    obj.GetRenderWindow().Render()
+
+            # Viewer4D binds f and r itself at priority 1.0; `h` is free
+            viewer.iren.AddObserver("KeyPressEvent", on_key)
+            print(f"`h` toggles the {args.highlight} highlight")
         viewpoint(viewer.ren, cam)   # else the window opens on the default camera
         print("window: left-drag rotate, middle/shift-drag pan, scroll zoom, q quit")
         viewer.start()
         return 0
 
-    render_to_png([actor], args.png, size=(W, H), camera=cam)
+    render_to_png([actor] + ([hi] if hi is not None else []),
+                  args.png, size=(W, H), camera=cam)
 
     import imageio.v2 as iio
     img = iio.imread(args.png).reshape(-1, 3)
