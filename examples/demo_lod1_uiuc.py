@@ -20,6 +20,12 @@ footprint ring outward (see ccw()).  A handful of rings also touch themselves
 enclosing a sliver a few cm^2 in area -- which leaves the closed shell
 non-manifold; those lobes are cut out (see despike()).
 
+``--highlight ece`` paints the ECE Building magenta (matched to its OSM centre
+within 9 m) and ``h`` toggles it live under ``--interactive``.  The colour is
+written into the model's own cells, not into a second, coincident copy of the
+walls and roof: two copies of one surface z-fight, which reads as the landmark
+flashing between its base colour and magenta as the camera rotates.
+
 Caveat worth reading before trusting the vertical: OCM's heights are modelled,
 not measured (`height_source` is `msfp-2017` or `model`), and the tail is wild
 -- elsewhere in this same county file a single solid stands 261 m tall.  The
@@ -278,7 +284,9 @@ def main():
     norm = LogNorm(max(heights.min(), 3.0), heights.max())
     cmap = colormaps["turbo"]
     pts, cells, cols = vtk.vtkPoints(), vtk.vtkCellArray(), []
+    spans = []                                    # each building's cell range
     for oid, p, h, src, a in buildings:
+        c0 = cells.GetNumberOfCells()
         e = enu(p)                                # p is CCW, so all normals point out
         n = len(e)
         bot = [pts.InsertNextPoint(e[i, 0], e[i, 1], 0.0) for i in range(n)]
@@ -302,6 +310,7 @@ def main():
             ids.InsertNextId(k)
         cells.InsertNextCell(ids)
         cols.append(rgb)
+        spans.append((c0, cells.GetNumberOfCells()))
 
     pd = vtk.vtkPolyData()
     pd.SetPoints(pts)
@@ -324,8 +333,20 @@ def main():
     print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "
           f"({'watertight' if n_open == 0 else 'NOT watertight'})")
 
-    # ---- landmark highlight: a separate actor, so `h` can toggle it ----
-    hi = None
+    # ---- landmark highlight ----
+    # The landmark is recoloured in the base actor's own cells (see
+    # ``paint_highlight``).  Drawing a second, coincident copy of the walls and
+    # roof -- as this did at first -- makes the two surfaces z-fight: whichever
+    # of the two the rasteriser puts in front wins per pixel, and the boundary
+    # between them slides around as the camera rotates, so the ECE Building
+    # flashes orange (the base turbo colour) and magenta (the copy).  A polygon
+    # offset only assigns a winner if exactly one of the pair is offset; here
+    # the highlight mapper is offset away from the camera and the base mapper is
+    # not offset at all, so there is no stable winner.  One copy, recoloured,
+    # cannot fight with itself.  The pole is lines, not a surface, so it stays a
+    # separate actor.
+    HI_RGBA = (255, 0, 153, 255)                 # magenta: absent from turbo
+    hi, hi_span = None, None
     if not args.no_highlight:
         lat, lon = LANDMARKS[args.highlight]
         want = np.array([(lon - lon0) * M_PER_DEG_LAT * coslat,
@@ -337,44 +358,29 @@ def main():
               f"({h:.1f} m, {a.get('area', 0):.0f} m2), {near[k]:.0f} m from "
               f"the landmark")
 
-        e = enu(p)
-        n = len(e)
-        hpts, hpolys, hlines = vtk.vtkPoints(), vtk.vtkCellArray(), vtk.vtkCellArray()
-        bot = [hpts.InsertNextPoint(e[i, 0], e[i, 1], 0.0) for i in range(n)]
-        top = [hpts.InsertNextPoint(e[i, 0], e[i, 1], h) for i in range(n)]
-        for i in range(n):                       # walls and roof, floor omitted
-            j = (i + 1) % n
-            ids = vtk.vtkIdList()
-            for v in (bot[i], bot[j], top[j], top[i]):
-                ids.InsertNextId(v)
-            hpolys.InsertNextCell(ids)
-        ids = vtk.vtkIdList()
-        for v in top:
-            ids.InsertNextId(v)
-        hpolys.InsertNextCell(ids)
+        hi_span = spans[k]                       # the cells to recolour
 
-        cx, cy = e.mean(0)                       # a pole, so the pick reads
-        pole = vtk.vtkIdList()                   # from any angle and any zoom
-        pole.InsertNextId(hpts.InsertNextPoint(cx, cy, h))
-        pole.InsertNextId(hpts.InsertNextPoint(cx, cy, h + 0.35 * heights.max()))
-        hlines.InsertNextCell(pole)
-
-        hpd = vtk.vtkPolyData()
-        hpd.SetPoints(hpts)
-        hpd.SetPolys(hpolys)
-        hpd.SetLines(hlines)
-        hm = vtk.vtkPolyDataMapper()
-        hm.SetInputData(hpd)
-        hm.SetResolveCoincidentTopologyToPolygonOffset()   # no z-fight on the faces
-        hi = vtk.vtkActor()
-        hi.SetMapper(hm)
+        cx, cy = enu(p).mean(0)                  # a pole, so the pick reads
+        ppt = vtk.vtkPoints()                    # from any angle and any zoom
+        ppt.InsertNextPoint(cx, cy, h)
+        ppt.InsertNextPoint(cx, cy, h + 0.35 * heights.max())
+        pole = vtk.vtkCellArray()
+        pl = vtk.vtkIdList()
+        pl.InsertNextId(0)
+        pl.InsertNextId(1)
+        pole.InsertNextCell(pl)
+        ppd = vtk.vtkPolyData()
+        ppd.SetPoints(ppt)
+        ppd.SetLines(pole)
+        pm = vtk.vtkPolyDataMapper()
+        pm.SetInputData(ppd)
+        hi = vtk.vtkActor()                      # unlit, so it reads flat
+        hi.SetMapper(pm)
         hp = hi.GetProperty()
-        hp.SetColor(1.0, 0.0, 0.6)               # magenta: absent from turbo
-        hp.SetEdgeVisibility(1)
-        hp.SetEdgeColor(1.0, 1.0, 1.0)
-        hp.SetLineWidth(1.5)
-        hp.SetAmbient(0.7)
-        hp.SetDiffuse(0.6)
+        hp.SetColor(1.0, 0.0, 0.6)
+        hp.SetLineWidth(2.5)
+        hp.SetAmbient(1.0)
+        hp.SetDiffuse(0.0)
 
     mapper = vtk.vtkPolyDataMapper()
     mapper.SetInputData(pd)
@@ -389,6 +395,25 @@ def main():
     prop.SetLineWidth(0.4)
     prop.SetAmbient(0.35)
     prop.SetDiffuse(0.85)
+
+    # ---- the `h` toggle ----
+    # Recolour the landmark's cells inside the base actor's one scalar array,
+    # rather than showing or hiding a second copy of its faces: the copy was the
+    # flicker.  ``rgba.Modified()`` bumps the array's MTime, which is what makes
+    # the mapper (DirectScalars) re-read the colours on the next Render.
+    hi_base = tuple(rgba.GetTuple4(hi_span[0])) if hi_span else None
+
+    def paint_highlight(on):
+        if hi_span is None:
+            return
+        c = HI_RGBA if on else hi_base
+        for i in range(*hi_span):
+            rgba.SetTuple4(i, *c)
+        rgba.Modified()
+        pd.Modified()
+
+    if hi is not None:
+        paint_highlight(True)
 
     # a flat campus needs a low, oblique eye: ~55 deg azimuth, ~25 deg elevation
     span = max(np.ptp(enu(np.array([[BBOX[0], BBOX[1]],
@@ -414,7 +439,9 @@ def main():
 
             def on_key(obj, _event):
                 if obj.GetKeySym().lower() == "h":
-                    hi.SetVisibility(0 if hi.GetVisibility() else 1)
+                    on = hi.GetVisibility() == 0
+                    paint_highlight(on)
+                    hi.SetVisibility(1 if on else 0)
                     obj.GetRenderWindow().Render()
 
             # Viewer4D binds f and r itself at priority 1.0; `h` is free
