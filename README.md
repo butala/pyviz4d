@@ -104,7 +104,7 @@ command line, or run them through `.venv/bin/python` after syncing an extra.
 | `demo_plumeviz.py` | COVIS hydrothermal plume: volume rendering + streamlines |
 | `demo_plumeviz_fig3.py` | Paper-faithful static figures (`--mode`) |
 | `validate_wgs84.py` | WGS84 conversion checks |
-| `demo_lod1_*.py` | LoD1 city models from OpenStreetMap (below) |
+| `demo_lod1_*.py` | LoD1 city models from OpenStreetMap and Open City Model (below) |
 
 Every demo opens an interactive window (left-drag rotate, middle/shift-drag pan,
 scroll zoom, `q` quit) except `demo_plumeviz_fig3.py`, whose `--mode` runs and the
@@ -168,16 +168,18 @@ uv run --with scipy python examples/demo_plumeviz.py --streamlines    # Figure 4
 uv run --with scipy python examples/demo_plumeviz.py --velocity       # Figure 5 style
 ```
 
-### LoD1 city models from OpenStreetMap
+### LoD1 city models
 
-Three worked examples geocode a place, pull OSM footprints, extrude LoD1 solids
-and write a CityJSON 1.1 model plus a PNG:
+Four worked examples build a LoD1 CityJSON model plus a PNG. Three geocode a
+place, pull OSM footprints and extrude them; `demo_lod1_uiuc.py` instead reads
+the pre-extruded solids that Open City Model publishes.
 
 ```bash
 # --extra geo is required: these scripts use `requests`, which arrives with pooch
 uv run --extra geo python examples/demo_lod1_pudong.py   # Lujiazui, Shanghai (real 632 m heights)
 uv run --extra geo python examples/demo_lod1_lian.py     # Li'an Education Zone, Hainan
 uv run --extra geo python examples/demo_lod1_glasgow.py  # James Watt Building, Glasgow
+uv run --extra geo python examples/demo_lod1_uiuc.py     # UIUC campus, Illinois (Open City Model)
 
 # every generator takes --interactive for a window instead of a PNG
 uv run --extra geo python examples/demo_lod1_pudong.py --interactive
@@ -195,6 +197,18 @@ quads and roof — wound counter-clockwise seen from outside, and each run print
 `0 boundary edges (watertight)`. `--interactive` opens the model on the same
 view as the PNG rather than VTK's default camera. Building data is
 &copy; OpenStreetMap contributors, [ODbL 1.0](https://www.openstreetmap.org/copyright).
+
+`demo_lod1_uiuc.py` needs no footprint or height lookup: [Open City
+Model](https://registry.opendata.aws/opencitymodel/) (AWS Open Data, no account)
+already publishes a LoD1 `Solid` per building for every US county, so the script
+downloads the two Champaign County shards once (~68 MB, cached under
+`data/uiuc/`), keeps the campus bbox, and rebuilds the shells so the winding is
+outward-facing throughout: OCM's own winding is not uniform, and a few per cent
+of the campus solids arrive inside-out. Its heights are *modelled*, not
+measured, and the tail is long enough that `--max-height` (default 120 m) drops
+the worst mis-models. Building data is &copy; Open City Model / BuildZero,
+[ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/), from Microsoft
+USBuildingFootprints.
 
 ## Tests
 
