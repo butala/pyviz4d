@@ -34,7 +34,7 @@ geo = ["pooch", "pyproj", "requests", "imageio"]
 video = ["imageio", "imageio[ffmpeg]"]  # Viewer4D.enable_recording (video_path)
 all = ["pooch", "pyproj", "requests", "imageio", "imageio[ffmpeg]"]
 # PEP 621 extras cannot include one another, so this repeats `all` + pytest.
-dev = ["pytest", "pooch", "pyproj", "requests", "imageio", "imageio[ffmpeg]"]
+dev = ["pytest", "ruff", "pooch", "pyproj", "requests", "imageio", "imageio[ffmpeg]"]
 phiflow = ["phiflow", "scipy", "tqdm", "jax"]   # matplotlib is a core dep
 
 [tool.setuptools.packages.find]
@@ -44,3 +44,27 @@ include = ["pyviz4d*"]
 # A bare `pytest` used to collect test_phi*.py at the repo root (phiflow
 # scratch scripts, not tests) and die on "No module named 'phi'".
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# Bugs and drift rather than style: pyflakes (unused and undefined names),
+# bugbear (B023 and friends -- closures over loop variables), pyupgrade
+# (deprecated typing), isort, pycodestyle, and ruff's own correctness rules.
+# Deliberately *not* selected are the opinion rules (C4, SIM, BLE, PERF, EXE):
+# the example scripts are demos, `except Exception` around a network fetch with
+# a documented offline fallback is the right shape there, and the LoD1
+# generators put a copyright line above the shebang on purpose.
+select = ["E", "W", "F", "B", "UP", "I", "RUF"]
+ignore = [
+    "E501",    # long lines: the API/extra tables and docstrings read better so
+    "RUF005",  # a + [b] is clearer than [*a, b] at these call sites
+    "RUF046",  # int(round(...)) is clearer than round(...) in the PNG checks
+]
+
+[tool.ruff.lint.per-file-ignores]
+# phiflow's API is huge and flat; the demos `from phi.flow import *`.
+"examples/demo_phiflow.py" = ["F403", "F405", "F821"]
+"examples/scratch/*" = ["F403", "F405", "F821"]

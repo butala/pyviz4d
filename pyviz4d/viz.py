@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+import numpy as np
 import vtk
-from typing import List
+
 from .earth import WGS84, earth_actor
+
 
 class TemporalActor:
     """Base class for objects that evolve over time.
@@ -19,7 +23,6 @@ class TemporalActor:
     def update(self, current_time: float):
         raise NotImplementedError
 
-import numpy as np
 
 class Viewer4D:
     """
@@ -87,7 +90,7 @@ class Viewer4D:
         self.initial_camera_state = None
 
         # State
-        self.temporal_actors: List[TemporalActor] = []
+        self.temporal_actors: list[TemporalActor] = []
         self.current_time = 0.0
         self.is_playing = True
         self.time_speed = 1.0
@@ -198,7 +201,9 @@ class Viewer4D:
         for ren in renderers_to_add:
             ren.AddActor(vtk_actor)
 
-    def enable_recording(self, video_path: str = None, frames_dir: str = None, fps: int = 60, max_frames: int = None):
+    def enable_recording(self, video_path: str | None = None,
+                         frames_dir: str | None = None, fps: int = 60,
+                         max_frames: int | None = None):
         """
         Enables recording the animation to a video file and/or individual frames.
 
@@ -248,6 +253,7 @@ class Viewer4D:
 
         if self._record_frames_dir is not None:
             import os
+
             import imageio
             frame_path = os.path.join(self._record_frames_dir, f"frame_{self._recorded_frame_count:05d}.png")
             imageio.imwrite(frame_path, image)

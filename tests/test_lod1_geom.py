@@ -15,12 +15,22 @@ Both are checked against a 2 x 3 x 4 box, whose volume is exactly 24.
 """
 import json
 
+import _lod1
 import numpy as np
 import pytest
+from _lod1 import (
+    Building,
+    ccw,
+    clean,
+    despike,
+    height_of,
+    lod1_scene,
+    n_boundary_edges,
+    ring_area,
+    solid_surfaces,
+    write_cityjson,
+)
 
-import _lod1
-from _lod1 import (Building, ccw, clean, despike, height_of, lod1_scene,
-                   n_boundary_edges, ring_area, solid_surfaces, write_cityjson)
 from pyviz4d import read_cityjson
 
 # 3 m across at Urbana (lon -88.23, lat 40.11) -- the case the old np.allclose
@@ -98,7 +108,7 @@ def test_inverted_ring_gives_negative_volume():
 
 def test_lod1_scene_is_watertight():
     ring = ccw(np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 3.0], [0.0, 3.0]]))
-    pd, actor, spans = lod1_scene([ring], [4.0], [(255, 0, 0, 255)])
+    pd, _, spans = lod1_scene([ring], [4.0], [(255, 0, 0, 255)])
     assert n_boundary_edges(pd) == 0
     assert pd.GetNumberOfPolys() == 6                # 4 walls + roof + floor
     assert spans == [(0, 6)]

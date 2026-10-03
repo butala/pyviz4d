@@ -147,6 +147,11 @@ def height_of(tags, defaults, height_range=(2.0, 700.0),
     return defaults.get(bt, defaults["yes"]) * level_m, "default:" + bt
 
 
+def _surface(ids, idx):
+    """One CityJSON surface -- ``[ring]`` -- with the ring mapped through ``ids``."""
+    return [[ids[i] for i in idx]]
+
+
 def solid_surfaces(n):
     """The closed LoD1 shell of an n-gon extrusion, as index lists.
 
@@ -190,13 +195,9 @@ def write_cityjson(path, title, buildings, lon0, lat0):
         top = [vid(b.ring[i, 0], b.ring[i, 1], b.height) for i in range(n)]
         floor, walls, roof = solid_surfaces(n)
         ids = bot + top
-
-        def surface(idx):
-            return [[ids[i] for i in idx]]          # surface = [ring], ring = [i, ...]
-
-        shell = ([surface(floor)]                    # a shell = [surface, ...]
-                 + [surface(w) for w in walls]
-                 + [surface(roof)])
+        shell = ([_surface(ids, floor)]               # a shell = [surface, ...]
+                 + [_surface(ids, w) for w in walls]
+                 + [_surface(ids, roof)])
         attrs = {"height_m": round(b.height, 2), "height_source": b.source}
         attrs.update(b.attrs)
         cos[b.key] = {"type": "Building", "attributes": attrs,

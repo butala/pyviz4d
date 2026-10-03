@@ -16,12 +16,22 @@ from pathlib import Path
 
 import numpy as np
 import requests
+from _lod1 import (
+    M_PER_DEG_LAT,
+    Building,
+    ccw,
+    clean,
+    enu,
+    height_of,
+    lod1_scene,
+    n_boundary_edges,
+    oblique_camera,
+    png_stats,
+    viewpoint,
+    write_cityjson,
+)
 from matplotlib import colormaps
 from matplotlib.colors import LogNorm
-
-from _lod1 import (Building, LEVEL_M, M_PER_DEG_LAT, ccw, clean, enu, height_of,
-                   lod1_scene, n_boundary_edges, oblique_camera, png_stats,
-                   viewpoint, write_cityjson)
 
 HERE = Path(__file__).resolve().parents[1] / "data" / "glasgow"
 HERE.mkdir(parents=True, exist_ok=True)
@@ -50,7 +60,7 @@ def geocode():
         b = [float(v) for v in hit["boundingbox"]]         # minlat, maxlat, ...
         return (b[0] + b[1]) / 2, (b[2] + b[3]) / 2, hit["display_name"]
     except Exception as exc:                                # offline / rate limit
-        print("geocode failed (%s); using fallback coords" % exc)
+        print(f"geocode failed ({exc}); using fallback coords")
         return FALLBACK[0], FALLBACK[1], "fallback: University Avenue, Gilmorehill"
 
 
@@ -125,7 +135,7 @@ def main():
     rgbs = [tuple(int(c * 255) for c in cmap(norm(b.height))[:3]) + (255,)
             for b in buildings]
     rings = [enu(b.ring, lon, lat) for b in buildings]
-    pd, actor, spans = lod1_scene(rings, heights, rgbs, edge_width=0.5)
+    pd, actor, _ = lod1_scene(rings, heights, rgbs, edge_width=0.5)
     n_open = n_boundary_edges(pd)             # 0 boundary edges = closed shells
     print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "
           f"({'watertight' if n_open == 0 else 'NOT watertight'})")

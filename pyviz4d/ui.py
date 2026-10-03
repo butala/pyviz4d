@@ -1,5 +1,6 @@
 import vtk
 
+
 def create_slider(iren, title, min_val, max_val, initial_val, pos_y, callback):
     """
     Creates a 2D slider widget in the VTK window.

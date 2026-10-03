@@ -42,12 +42,21 @@ from pathlib import Path
 import numpy as np
 import requests
 import vtk
+from _lod1 import (
+    M_PER_DEG_LAT,
+    Building,
+    ccw,
+    despike,
+    enu,
+    lod1_scene,
+    n_boundary_edges,
+    oblique_camera,
+    png_stats,
+    viewpoint,
+    write_cityjson,
+)
 from matplotlib import colormaps
 from matplotlib.colors import LogNorm
-
-from _lod1 import (Building, M_PER_DEG_LAT, ccw, despike, enu, lod1_scene,
-                   n_boundary_edges, oblique_camera, png_stats, viewpoint,
-                   write_cityjson)
 
 HERE = Path(__file__).resolve().parents[1] / "data" / "uiuc"
 HERE.mkdir(parents=True, exist_ok=True)

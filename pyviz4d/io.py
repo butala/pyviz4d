@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import os
 import xml.etree.ElementTree as ET
-from typing import List, Union
+
 import numpy as np
 import vtk
+
 from .volume import create_vtk_image_from_numpy
 
 
@@ -17,8 +20,21 @@ class VTKSeriesWriter:
         self.pvd_path = os.path.join(output_dir, f"{collection_name}.pvd")
         self.entries = []  # tuples of (timestep, relative_filename)
         os.makedirs(self.output_dir, exist_ok=True)
+        # Built once and appended to.  Rebuilding the manifest from
+        # self.entries on every frame is O(n^2) over a series; this keeps each
+        # write O(1) while still leaving a valid .pvd on disk at all times.
+        self._root = ET.Element("VTKFile", type="Collection", version="0.1",
+                                byte_order="LittleEndian")
+        self._collection = ET.SubElement(self._root, "Collection")
 
-    def write_image_data(self, data: Union[np.ndarray, vtk.vtkImageData], timestep: float,
+    def _record(self, timestep: float, filename: str):
+        """Register a written frame and refresh the .pvd manifest."""
+        self.entries.append((timestep, filename))
+        ET.SubElement(self._collection, "DataSet", timestep=str(timestep),
+                      group="", part="0", file=filename)
+        self._write_pvd()
+
+    def write_image_data(self, data: np.ndarray | vtk.vtkImageData, timestep: float,
                          filename_prefix: str = "frame", spacing=(1.0, 1.0, 1.0)):
         """
         Writes a 3D numpy array or vtkImageData as a binary .vti file and records the timestep.
@@ -39,8 +55,7 @@ class VTKSeriesWriter:
         writer.SetDataModeToBinary()
         writer.Write()
 
-        self.entries.append((timestep, filename))
-        self._write_pvd()
+        self._record(timestep, filename)
         return full_path
 
     def write_poly_data(self, poly_data: vtk.vtkPolyData, timestep: float,
@@ -57,24 +72,17 @@ class VTKSeriesWriter:
         writer.SetDataModeToBinary()
         writer.Write()
 
-        self.entries.append((timestep, filename))
-        self._write_pvd()
+        self._record(timestep, filename)
         return full_path
 
     def _write_pvd(self):
-        """Generates/updates the .pvd XML manifest."""
-        root = ET.Element("VTKFile", type="Collection", version="0.1", byte_order="LittleEndian")
-        collection = ET.SubElement(root, "Collection")
-
-        for ts, fname in self.entries:
-            ET.SubElement(collection, "DataSet", timestep=str(ts), group="", part="0", file=fname)
-
-        tree = ET.ElementTree(root)
+        """Writes the .pvd XML manifest."""
+        tree = ET.ElementTree(self._root)
         ET.indent(tree, space="  ", level=0)
         tree.write(self.pvd_path, xml_declaration=True, encoding="utf-8")
 
 
-def parse_pvd(pvd_path: str) -> List[tuple]:
+def parse_pvd(pvd_path: str) -> list[tuple]:
     """
     Parses a .pvd file into a sorted list of (timestep, absolute_filepath).
     """

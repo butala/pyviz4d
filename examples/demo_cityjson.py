@@ -1,12 +1,15 @@
 import argparse
-import vtk
+
 import pooch
-from pyviz4d.viz import Viewer4D
+import vtk
+
 from pyviz4d.cityjson import read_cityjson
+from pyviz4d.viz import Viewer4D
+
 
 def main():
     parser = argparse.ArgumentParser(description="PyViz4D CityJSON Demo")
-    args = parser.parse_args()
+    parser.parse_args()   # no options, but reject the unexpected
 
     # Download a realistic CityJSON file (Rotterdam Railway LoD3 model)
     url = "https://3d.bk.tudelft.nl/opendata/cityjson/3dcities/v2.0/LoD3_Railway.city.json"

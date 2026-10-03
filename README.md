@@ -76,13 +76,17 @@ this codebase is written to avoid.
 
 | Module | Contents |
 | --- | --- |
-| `pyviz4d.primitives` | `get_color`, `line_source`, `line_actor`, `point_actor`, `spherical_voxel_actor`, `render_to_png` |
+| `pyviz4d.primitives` | `get_color`, `line_source`, `line_actor`, `point_actor`, `spherical_voxel_actor`, `render_to_png`, `viewpoint` |
 | `pyviz4d.viz` | `Viewer4D` (`add_actor`, `start`, `enable_recording`, `save_screenshot`), `EarthViewer4D`, `TemporalActor` |
-| `pyviz4d.volume` | `VolumeActor`, `IsosurfaceActor`, `matplotlib_ctf`, `power_opacity`, `create_vtk_image_from_numpy` |
-| `pyviz4d.streamline` | `StreamlineActor`, `CenterlineActor`, `trace_streamlines`, `gradient_field`, `extract_centerline` |
+| `pyviz4d.volume` | `VolumeActor`, `IsosurfaceActor`, `contour_actor`, `matplotlib_ctf`, `power_opacity`, `create_vtk_image_from_numpy` |
+| `pyviz4d.streamline` | `StreamlineActor`, `CenterlineActor`, `trace_streamlines`, `apply_tracer_settings`, `gradient_field`, `vector_field_to_vtk`, `extract_centerline`, `centerline_seeds`, `polydata_from_points` |
 | `pyviz4d.series` / `pyviz4d.io` | `IsosurfaceSeriesActor`, `PolyDataSeriesActor`, `VTKSeriesWriter`, `parse_pvd` |
 | `pyviz4d.cityjson` | `read_cityjson` |
 | `pyviz4d.earth` | `earth_actor`, `WGS84`, `blue_marble.fetch` |
+
+Everything in this table except the dotted `blue_marble.fetch` is re-exported
+at the top level, so `from pyviz4d import line_actor` works; the same names are
+also reachable as `pyviz4d.primitives.line_actor` and so on.
 
 ## Examples
 
@@ -202,10 +206,9 @@ downloads the two Champaign County shards once (~68 MB, cached under
 outward-facing throughout: OCM's own winding is not uniform, and a few per cent
 of the campus solids arrive inside-out. `--highlight ece` paints the ECE
 Building (4622 m², matched to its OSM centre within 9 m) magenta, and `h`
-toggles it live in the `--interactive` window; the colour goes into the model's
-own cells rather than into a second, coincident copy of the building, because
-two copies of one surface z-fight and the landmark then flashes between its base
-colour and magenta as the camera rotates. The building heights are *modelled*,
+toggles it live in the `--interactive` window; the colour is written into the
+model's own cells, so there is no second surface to z-fight with. The building
+heights are *modelled*,
 not measured, and the tail is long enough that `--max-height` (default 120 m)
 drops the worst mis-models. Building data is &copy; Open City Model / BuildZero,
 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/), from Microsoft

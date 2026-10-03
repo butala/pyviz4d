@@ -10,11 +10,24 @@ import numpy as np
 import pytest
 import vtk
 
-from pyviz4d import (CenterlineActor, IsosurfaceActor, IsosurfaceSeriesActor,
-                     PolyDataSeriesActor, StreamlineActor, VolumeActor,
-                     VTKSeriesWriter, centerline_seeds, create_vtk_image_from_numpy,
-                     gradient_field, line_source, matplotlib_ctf, polydata_from_points,
-                     power_opacity, trace_streamlines, vector_field_to_vtk)
+from pyviz4d import (
+    CenterlineActor,
+    IsosurfaceActor,
+    IsosurfaceSeriesActor,
+    PolyDataSeriesActor,
+    StreamlineActor,
+    VolumeActor,
+    VTKSeriesWriter,
+    centerline_seeds,
+    create_vtk_image_from_numpy,
+    gradient_field,
+    line_source,
+    matplotlib_ctf,
+    polydata_from_points,
+    power_opacity,
+    trace_streamlines,
+    vector_field_to_vtk,
+)
 from pyviz4d.streamline import apply_tracer_settings
 from pyviz4d.volume import contour_actor
 
@@ -59,6 +72,7 @@ def test_contour_actor_accepts_an_image_or_a_reader(frames):
     reader = vtk.vtkXMLImageDataReader()             # the series call site
     _, mapper2, actor2 = contour_actor(reader)
     assert isinstance(actor2, vtk.vtkActor)
+    assert mapper2.GetLookupTable() is not None
 
 
 def test_matplotlib_ctf_falls_back_on_an_unknown_name():

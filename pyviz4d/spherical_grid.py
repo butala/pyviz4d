@@ -13,8 +13,9 @@ same helper name, opposite meaning.  See
 ``tests/test_primitives.py::test_spherical_grid_actor_is_latitude``.
 """
 
-import vtk
 import numpy as np
+import vtk
+
 
 def spherical_grid_actor(r1, r2, N_theta, N_phi):
     """
@@ -44,7 +45,7 @@ def spherical_grid_actor(r1, r2, N_theta, N_phi):
     lines = vtk.vtkCellArray()
 
     # Construct VTK lines connectivity
-    for i, (x1, y1, z1, x2, y2, z2) in enumerate(zip(x1s, y1s, z1s, x2s, y2s, z2s)):
+    for x1, y1, z1, x2, y2, z2 in zip(x1s, y1s, z1s, x2s, y2s, z2s):
         p1_id = points.InsertNextPoint(x1, y1, z1)
         p2_id = points.InsertNextPoint(x2, y2, z2)
 

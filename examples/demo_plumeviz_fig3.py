@@ -47,7 +47,6 @@ from scipy.ndimage import gaussian_filter, label
 from pyviz4d import create_vtk_image_from_numpy, extract_centerline, matplotlib_ctf
 from pyviz4d.volume import power_opacity
 
-
 # --------------------------------------------------------------------------- #
 # Colormap
 # ---------------------------------------------------------------------------
@@ -79,7 +78,7 @@ def load_covis(path, roi):
     """Load a COVIS ``*-imaging1.mat`` file and crop it to ``roi`` (metres)."""
     import scipy.io as sio
     m = sio.loadmat(path, squeeze_me=True, struct_as_record=False)
-    key = [k for k in m if not k.startswith("__")][0]
+    key = next(k for k in m if not k.startswith("__"))
     grid = m[key].grid
 
     vol = np.asarray(grid.Id_filt, dtype=np.float32)             # (X, Y, Z)
@@ -89,8 +88,11 @@ def load_covis(path, roi):
 
     if roi is not None:
         x0, x1, y0, y1, z0, z1 = roi
-        i = lambda a, b, o, s, n: (int(np.clip(round((a - o) / s), 0, n - 1)),
-                                   int(np.clip(round((b - o) / s), 0, n - 1)))
+
+        def i(a, b, o, s, n):
+            return (int(np.clip(round((a - o) / s), 0, n - 1)),
+                    int(np.clip(round((b - o) / s), 0, n - 1)))
+
         i0, i1 = i(x0, x1, origin[0], spacing[0], vol.shape[0])
         j0, j1 = i(y0, y1, origin[1], spacing[1], vol.shape[1])
         k0, k1 = i(z0, z1, origin[2], spacing[2], vol.shape[2])
@@ -264,7 +266,7 @@ def plume_base_center(sm_iso, spacing, origin, z=1.0):
 
 def add_streamlines(actors, sm_iso, spacing, origin, args):
     """Figure-5 style RK4 streamlines of the velocity field, coloured by speed."""
-    from pyviz4d import vector_field_to_vtk, trace_streamlines
+    from pyviz4d import trace_streamlines, vector_field_to_vtk
 
     vx, vy, vz, strength = buoyant_velocity(sm_iso, spacing, origin,
                                             rise=args.rise, entrain=args.entrain)
@@ -496,7 +498,7 @@ def main():
     vol, spacing, origin, name = load_covis(path, args.roi)
     print(f"Loaded {name}  ROI shape={vol.shape}")
 
-    log_display, sm_iso, sm_disp = prepare(vol, args.segment_threshold,
+    log_display, sm_iso, _ = prepare(vol, args.segment_threshold,
                                            args.sigma_iso, args.sigma_display,
                                            args.prune_frac)
     actors, bounds = build_scene(log_display, sm_iso, spacing, origin, vol.shape, args)

@@ -100,7 +100,7 @@ def main():
     args = ap.parse_args()
     w, h = (int(v) for v in args.size.lower().split("x"))
 
-    actor, pd, heights, norm, cmap, object_id = build_actor(args.cityjson)
+    actor, pd, heights, *_ = build_actor(args.cityjson)
     print(f"{pd.GetNumberOfPoints()} points, {pd.GetNumberOfPolys()} faces, "
           f"{len(heights)} buildings, height {heights.min():.0f}-{heights.max():.0f} m")
 

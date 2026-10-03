@@ -32,7 +32,7 @@ def test_prime_meridian_is_the_xz_plane():
 
 
 def test_altitude_adds_to_the_radius():
-    x, y, z = wgs84_to_cartesian(0.0, 0.0, alt_km=100.0)
+    x, _, _ = wgs84_to_cartesian(0.0, 0.0, alt_km=100.0)
     assert x == pytest.approx(WGS84.a / 1e3 + 100.0)
 
 

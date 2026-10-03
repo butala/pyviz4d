@@ -33,9 +33,17 @@ import os
 import numpy as np
 import vtk
 
-from pyviz4d import (Viewer4D, VolumeActor, IsosurfaceActor, StreamlineActor,
-                     CenterlineActor, matplotlib_ctf, power_opacity,
-                     extract_centerline, gradient_field)
+from pyviz4d import (
+    CenterlineActor,
+    IsosurfaceActor,
+    StreamlineActor,
+    Viewer4D,
+    VolumeActor,
+    extract_centerline,
+    gradient_field,
+    matplotlib_ctf,
+    power_opacity,
+)
 
 
 def _register_plume_colormaps():
@@ -75,7 +83,7 @@ def load_covis(path, roi=None):
     """
     import scipy.io as sio
     m = sio.loadmat(path, squeeze_me=True, struct_as_record=False)
-    key = [k for k in m if not k.startswith("__")][0]
+    key = next(k for k in m if not k.startswith("__"))
     grid = m[key].grid
 
     vol = np.asarray(grid.Id_filt, dtype=np.float32)  # differenced + OS-CFAR filtered
@@ -158,7 +166,7 @@ def fatten(vol, size=3, sigma=0.7):
     solid glowing structure rather than faint scattered points. This is a visual
     aid applied *only* to the rendered scalar field; analysis (centreline,
     streamlines, isosurface) still uses the original values."""
-    from scipy.ndimage import maximum_filter, gaussian_filter
+    from scipy.ndimage import gaussian_filter, maximum_filter
     v = maximum_filter(vol, size=size).astype(np.float32)
     if sigma > 0:
         v = gaussian_filter(v, sigma)
@@ -190,7 +198,7 @@ def buoyant_velocity(vol, spacing, origin, rise=1.0, entrain=0.15):
     xs = origin[0] + np.arange(nx) * spacing[0]
     ys = origin[1] + np.arange(ny) * spacing[1]
     zs = origin[2] + np.arange(nz) * spacing[2]
-    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+    X, Y, _ = np.meshgrid(xs, ys, zs, indexing="ij")
 
     vmax = vol.max() if vol.max() > 0 else 1.0
     strength = np.clip(vol / vmax, 0.0, 1.0)
@@ -204,7 +212,6 @@ def buoyant_velocity(vol, spacing, origin, rise=1.0, entrain=0.15):
 def build_scene(volumes, spacing, origin, args):
     """Build all actors. Returns ``(actors, cam_bounds, ctf, scalar_bar)``."""
     seg_thr = args.segment_threshold
-    n_frames = len(volumes)
 
     # 1. Segment (drop noise) + fatten (fill the sparse plume) for display. --
     render_volumes = []
@@ -286,7 +293,6 @@ def build_scene(volumes, spacing, origin, args):
             seeds = velocity_seeds(volumes[0], spacing, origin, n=args.n_seeds)
             direction = "forward"
             colormap = args.streamline_colormap
-            magnitude_range = None
         else:
             frames_vec = []
             for v in volumes:
@@ -299,7 +305,6 @@ def build_scene(volumes, spacing, origin, args):
                                    n_radial=args.n_radial)
             direction = args.streamline_direction
             colormap = args.streamline_colormap
-            magnitude_range = None
 
         streamlines = StreamlineActor(
             frames_vec, spacing=spacing, origin=origin, seeds=seeds,
@@ -363,7 +368,7 @@ def make_scalar_bar(ctf, scalar_min, scalar_max, cmap_name):
 def gradient_seeds(vol, spacing, origin, threshold=None, jitter=0.3, n_radial=8):
     from pyviz4d.streamline import centerline_seeds
     seeds = centerline_seeds(vol, spacing, origin, threshold=threshold,
-                             radial_jitter=jitter, n_radial=n_radial, seed=0)
+                             radial_jitter=jitter, n_radial=n_radial)
     # Subsample along z to avoid an over-crowded field.
     n = seeds.GetNumberOfPoints()
     keep = vtk.vtkPoints()
@@ -513,7 +518,7 @@ def main():
     volumes = []
     if files:
         for f in files:
-            vol, spacing, origin, name = load_covis(f, roi=args.roi)
+            vol, spacing, origin, _ = load_covis(f, roi=args.roi)
             volumes.append(vol)
         print(f"Loaded {len(files)} COVIS frames from {args.data_dir}")
     else:
@@ -531,7 +536,7 @@ def main():
         volumes = interp
         print(f"Temporal interpolation -> {len(volumes)} frames")
 
-    actors, bounds, ctf, scalar_bar = build_scene(volumes, spacing, origin, args)
+    actors, bounds, _, scalar_bar = build_scene(volumes, spacing, origin, args)
 
     if args.screenshot:
         offscreen_render(actors, bounds, (1280, 860), (0.05, 0.05, 0.07),

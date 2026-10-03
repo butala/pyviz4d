@@ -1,12 +1,13 @@
 import argparse
-import numpy as np
-import vtk
-from tqdm import trange
-from phi.flow import *
+
 import matplotlib.pyplot as plt
+import vtk
+from phi.flow import *
+from tqdm import trange
 
 from pyviz4d.viz import Viewer4D
-from pyviz4d.volume import VolumeActor, IsosurfaceActor
+from pyviz4d.volume import IsosurfaceActor
+
 
 def simulate_smoke(res=28, frames=200):
     print(f"Simulating {frames} frames of smoke plume at resolution {res} using pure NumPy (this might take a moment)...")
@@ -22,7 +23,7 @@ def simulate_smoke(res=28, frames=200):
 
     density_arrays = []
 
-    for i in trange(frames, desc="Simulating smoke frames"):
+    for _ in trange(frames, desc="Simulating smoke frames"):
         density = advect.mac_cormack(density, velocity, dt=1) + inflow
         buoyancy = (density * vec(x=0, y=0.1, z=0)).at(velocity)
 

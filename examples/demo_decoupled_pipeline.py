@@ -5,13 +5,13 @@ Demo showing the decoupled Pipeline architecture:
 """
 import argparse
 import os
-import shutil
+
+import matplotlib.pyplot as plt
 import numpy as np
 import vtk
 from tqdm import trange
-import matplotlib.pyplot as plt
 
-from pyviz4d import Viewer4D, VTKSeriesWriter, IsosurfaceSeriesActor
+from pyviz4d import IsosurfaceSeriesActor, Viewer4D, VTKSeriesWriter
 
 
 def run_simulation_and_export(output_dir: str, res: int = 32, frames: int = 60):
@@ -34,7 +34,7 @@ def run_simulation_and_export(output_dir: str, res: int = 32, frames: int = 60):
         phase = t * 0.1
         # Dynamic rotating helical vortex field
         r = np.sqrt(X**2 + Z**2)
-        theta = np.arctan2(Z, X)
+
         density = np.exp(-((r - 1.2 - 0.3 * np.sin(Y + phase))**2 + (Y - phase % 6 + 3)**2 * 0.2))
         density += 0.5 * np.exp(-((X - np.cos(phase))**2 + (Y * 0.5)**2 + (Z - np.sin(phase))**2))
 

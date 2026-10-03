@@ -1,5 +1,4 @@
 from phi.flow import *
-import numpy as np
 
 res = 16
 velocity = StaggeredGrid(0, extrapolation.ZERO, x=res, y=res*2, z=res, bounds=Box(x=(0,100), y=(0,200), z=(0,100)))

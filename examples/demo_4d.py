@@ -1,9 +1,11 @@
 import argparse
+
 import numpy as np
 import vtk
-from pyviz4d.viz import EarthViewer4D, TemporalActor
+
 from pyviz4d.earth import WGS84
-from pyviz4d.spherical_grid import spherical_grid_actor
+from pyviz4d.viz import EarthViewer4D, TemporalActor
+
 
 class Satellite(TemporalActor):
     def __init__(self, radius, speed):
@@ -50,8 +52,10 @@ def main():
         video_path = "output.mp4" if args.record else None
         frames_dir = "frames" if args.save_frames else None
         print(f"Recording enabled: max_frames={args.max_frames}")
-        if video_path: print(f" - Video output: {video_path}")
-        if frames_dir: print(f" - Frames directory: {frames_dir}/")
+        if video_path:
+            print(f" - Video output: {video_path}")
+        if frames_dir:
+            print(f" - Frames directory: {frames_dir}/")
 
         viewer.enable_recording(
             video_path=video_path,

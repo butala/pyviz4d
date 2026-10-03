@@ -12,18 +12,26 @@ machinery is in ``_lod1.py``; what is local to Lujiazui is the bbox, the
 height table and the framing of the supertall cluster.
 """
 import argparse
-import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 import requests
+from _lod1 import (
+    Building,
+    ccw,
+    clean,
+    enu,
+    height_of,
+    lod1_scene,
+    n_boundary_edges,
+    oblique_camera,
+    png_stats,
+    viewpoint,
+    write_cityjson,
+)
 from matplotlib import colormaps
 from matplotlib.colors import LogNorm
-
-from _lod1 import (Building, LEVEL_M, ccw, clean, enu, height_of, lod1_scene,
-                   n_boundary_edges, oblique_camera, png_stats, viewpoint,
-                   write_cityjson)
 
 HERE = Path(__file__).resolve().parents[1] / "data" / "pudong"
 HERE.mkdir(parents=True, exist_ok=True)
@@ -116,7 +124,7 @@ def main():
     cmap = colormaps["turbo"]
     rgbs = [tuple(int(c * 255) for c in cmap(norm(b.height))[:3]) + (255,)
             for b in buildings]
-    pd, actor, spans = lod1_scene([enu(b.ring, lon0, lat0) for b in buildings],
+    pd, actor, _ = lod1_scene([enu(b.ring, lon0, lat0) for b in buildings],
                                   heights, rgbs)
     n_open = n_boundary_edges(pd)             # 0 boundary edges = closed shells
     print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "

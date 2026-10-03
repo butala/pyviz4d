@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 import json
+
 import numpy as np
 import vtk
 
-def read_cityjson(filepath: str, target_epsg: int = None) -> vtk.vtkPolyData:
+
+def read_cityjson(filepath: str, target_epsg: int | None = None) -> vtk.vtkPolyData:
     """
     Reads a CityJSON file and converts it to a vtkPolyData object.
     Optionally transforms the coordinates to a target EPSG using pyproj.
     """
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         data = json.load(f)
 
     vertices = np.array(data.get("vertices", []), dtype=np.float64)
@@ -49,7 +53,7 @@ def read_cityjson(filepath: str, target_epsg: int = None) -> vtk.vtkPolyData:
         for idx in outer_ring:
             polys.InsertCellPoint(idx)
 
-    for obj_id, obj in data.get("CityObjects", {}).items():
+    for obj in data.get("CityObjects", {}).values():
         for geom in obj.get("geometry", []):
             geom_type = geom.get("type", "")
             boundaries = geom.get("boundaries", [])

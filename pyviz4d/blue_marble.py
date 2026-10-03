@@ -21,7 +21,7 @@ def fetch(path, resolution='low'):
     try:
         url = URL_MAP[resolution]
     except KeyError:
-        raise ValueError('resolution must be one of: {}'.format(' '.join(sorted(URL_MAP))))
+        raise ValueError('resolution must be one of: {}'.format(' '.join(sorted(URL_MAP)))) from None
 
     logger.info(f"Ensuring {resolution} Blue Marble texture is available in {path}")
 

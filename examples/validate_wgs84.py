@@ -1,6 +1,8 @@
 import vtk
+
+from pyviz4d.earth import WGS84, sphere_to_cartesian, wgs84_to_cartesian
 from pyviz4d.viz import EarthViewer4D
-from pyviz4d.earth import WGS84, wgs84_to_cartesian, sphere_to_cartesian
+
 
 def create_marker(x, y, z, color, radius=50.0):
     source = vtk.vtkSphereSource()

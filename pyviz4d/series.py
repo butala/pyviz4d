@@ -1,8 +1,8 @@
 import vtk
 
 from .io import parse_pvd
-from .volume import contour_actor
 from .viz import TemporalActor
+from .volume import contour_actor
 
 
 def _advance(reader, entries, current_idx, current_time):

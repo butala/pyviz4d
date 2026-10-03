@@ -1,7 +1,10 @@
 import argparse
+
 import numpy as np
 import vtk
-from pyviz4d.viz import Viewer4D, TemporalActor
+
+from pyviz4d.viz import TemporalActor, Viewer4D
+
 
 class OrbitingPlanet(TemporalActor):
     def __init__(self, color, radius, orbit_distance, speed):

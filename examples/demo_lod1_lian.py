@@ -14,19 +14,28 @@ for rendering, CityJSON transform for storage.  Output is written under
 data/ (gitignored).
 """
 import argparse
-import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 import requests
+from _lod1 import (
+    LEVEL_M,
+    Building,
+    ccw,
+    clean,
+    enu,
+    height_of,
+    lod1_scene,
+    n_boundary_edges,
+    oblique_camera,
+    ring_area,
+    viewpoint,
+    write_cityjson,
+)
 from matplotlib import colormaps
 from matplotlib.colors import Normalize
 from matplotlib.path import Path as MplPath
-
-from _lod1 import (Building, LEVEL_M, M_PER_DEG_LAT, ccw, clean, enu, height_of,
-                   lod1_scene, n_boundary_edges, oblique_camera, ring_area,
-                   viewpoint, write_cityjson)
 
 OUT = Path(__file__).resolve().parents[1] / "data" / "lian"
 OUT.mkdir(parents=True, exist_ok=True)
@@ -150,7 +159,7 @@ def main():
     cmap = colormaps["viridis"]
     rgbs = [tuple(int(c * 255) for c in cmap(norm(b.height))[:3]) + (255,)
             for b in buildings]
-    pd, actor, spans = lod1_scene(rings, heights, rgbs,
+    pd, actor, _ = lod1_scene(rings, heights, rgbs,
                                   edge_rgb=(0.05, 0.05, 0.05), edge_width=0.6)
     n_open = n_boundary_edges(pd)             # 0 boundary edges = closed shells
     print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "

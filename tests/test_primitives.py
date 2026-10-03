@@ -13,9 +13,14 @@ import numpy as np
 import pytest
 import vtk
 
-import pyviz4d
-from pyviz4d import (get_color, line_source, line_actor, point_actor,
-                     spherical_voxel_actor, render_to_png)
+from pyviz4d import (
+    get_color,
+    line_actor,
+    line_source,
+    point_actor,
+    render_to_png,
+    spherical_voxel_actor,
+)
 from pyviz4d.spherical_grid import spherical_grid_actor
 
 # sha256 of the flattened (int64) cell connectivity for N_theta = N_phi = 10,
@@ -42,14 +47,18 @@ def _points(actor):
     return np.array([pd.GetPoint(i) for i in range(pd.GetNumberOfPoints())])
 
 
-def _cells(actor):
-    pd = _polydata(actor)
+def _cell_ids(pd):
+    """Each cell's point ids, as a list of tuples."""
     out = []
     for c in range(pd.GetNumberOfCells()):
         cell = pd.GetCell(c)
         out.append(tuple(cell.GetPointId(k)
                          for k in range(cell.GetNumberOfPoints())))
     return out
+
+
+def _cells(actor):
+    return _cell_ids(_polydata(actor))
 
 
 def _cells_digest(actor):
@@ -114,7 +123,7 @@ def test_line_source_multi_pair_counts_and_rgba():
     assert pd.GetNumberOfPoints() == 4
     assert pd.GetNumberOfCells() == 2
     # second point of cell i is indexed at len(xyz1) + i
-    assert _cells_cells(pd) == [(0, 2), (1, 3)]
+    assert _cell_ids(pd) == [(0, 2), (1, 3)]
     scalars = pd.GetCellData().GetScalars()
     assert scalars.GetNumberOfComponents() == 4
     assert tuple(scalars.GetTuple4(0)) == (255, 0, 0, 127)
@@ -127,16 +136,7 @@ def test_line_source_bare_point_broadcast_is_a_fan():
     pd = line_source(origin, targets)
     assert pd.GetNumberOfPoints() == 4          # 1 origin + 3 targets
     assert pd.GetNumberOfCells() == 3
-    assert _cells_cells(pd) == [(0, 1), (0, 2), (0, 3)]
-
-
-def _cells_cells(pd):
-    out = []
-    for c in range(pd.GetNumberOfCells()):
-        cell = pd.GetCell(c)
-        out.append(tuple(cell.GetPointId(k)
-                         for k in range(cell.GetNumberOfPoints())))
-    return out
+    assert _cell_ids(pd) == [(0, 1), (0, 2), (0, 3)]
 
 
 def test_line_source_no_color_means_no_cell_scalars():
@@ -347,7 +347,7 @@ def test_render_to_png_is_non_blank(tmp_path):
     # measured, not eyeballed: many distinct colours and a real fraction of
     # pixels away from the (0.15, 0.15, 0.15) background.
     unique_colors = np.unique(flat, axis=0).shape[0]
-    bg = int(round(0.15 * 255))
+    bg = round(0.15 * 255)
     non_background = np.mean(np.abs(flat - bg).max(axis=1) > 8)
     assert unique_colors > 20
     assert non_background > 0.02
@@ -355,6 +355,7 @@ def test_render_to_png_is_non_blank(tmp_path):
 
 def test_viewer_save_screenshot(tmp_path):
     import imageio.v2 as imageio
+
     from pyviz4d import Viewer4D
 
     viewer = Viewer4D(size=(320, 240))
@@ -369,7 +370,7 @@ def test_viewer_save_screenshot(tmp_path):
     assert os.path.exists(out)
     img = imageio.imread(out)
     assert img.shape[:2] == (240, 320)
-    bg = int(round(0.15 * 255))
+    bg = round(0.15 * 255)
     non_background = np.mean(
         np.abs(img.reshape(-1, img.shape[-1]).astype(int) - bg).max(axis=1) > 8)
     assert non_background > 0.01

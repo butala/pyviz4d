@@ -11,6 +11,7 @@ contest-winning PlumeViz system:
 import numpy as np
 import vtk
 from vtk.util import numpy_support
+
 from .viz import TemporalActor
 
 
@@ -139,16 +140,15 @@ def polydata_from_points(points: np.ndarray, closed: bool = False):
 
 def centerline_seeds(volume: np.ndarray, spacing=(1.0, 1.0, 1.0),
                      origin=(0.0, 0.0, 0.0), threshold=None,
-                     radial_jitter: float = 0.0, n_radial: int = 1,
-                     seed: int = 0):
+                     radial_jitter: float = 0.0, n_radial: int = 1):
     """Seed points placed along the plume centreline.
 
-    ``n_radial > 1`` places ``n_radial`` seeds in a small circle around each
-    centreline point, which produces the radial (centre -> periphery) streamlines
-    shown in Figure 4 of the PlumeViz paper.
+    ``n_radial > 1`` places ``n_radial`` seeds in a small circle of radius
+    ``radial_jitter`` around each centreline point, evenly spaced in angle,
+    which produces the radial (centre -> periphery) streamlines shown in
+    Figure 4 of the PlumeViz paper.  The placement is deterministic.
     """
     pts, _ = extract_centerline(volume, spacing, origin, threshold=threshold)
-    rng = np.random.default_rng(seed)
 
     seed_points = vtk.vtkPoints()
     for p in pts:
