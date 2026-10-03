@@ -45,17 +45,24 @@ from pyviz4d import (
 
 
 def blackbody(n=256):
-    """Blackbody ramp: cool shadow -> ember -> orange -> gold -> white hot.
+    """A sunset ramp: indigo shadow -> violet -> magenta -> coral -> cream.
 
     Returned as ``[(scalar, r, g, b), ...]`` for VolumeActor's ``color_points``.
-    A single hue would read as a cutout; the ramp through two hues is what
-    makes a volume look incandescent.
+
+    Deliberately *not* blackbody.  A fire ramp puts dark orange in the middle
+    of its range, and semi-transparent dark orange composited over a near-black
+    ground is brown -- which is what most of the volume ends up being.  Keeping
+    the whole low half cool (indigo/violet) means the thin smoke reads blue and
+    only the dense core turns warm, where bright coral and cream cannot go
+    muddy.  The hue path also never enters 30-70 deg at low value, which is
+    where olive and brown live.
     """
-    stops = [(0.00, (0.010, 0.008, 0.030)),
-             (0.18, (0.26, 0.03, 0.14)),
-             (0.45, (0.85, 0.28, 0.05)),
-             (0.72, (1.00, 0.74, 0.14)),
-             (1.00, (1.00, 0.98, 0.90))]
+    stops = [(0.00, (0.03, 0.02, 0.12)),   # indigo shadow
+             (0.22, (0.16, 0.08, 0.52)),   # violet
+             (0.45, (0.55, 0.14, 0.80)),   # purple-magenta
+             (0.64, (0.95, 0.28, 0.62)),   # magenta
+             (0.82, (1.00, 0.58, 0.46)),   # coral
+             (1.00, (1.00, 0.96, 0.88))]   # cream
     xs = np.linspace(0.0, 1.0, n)
     out = []
     for t in xs:
@@ -68,8 +75,17 @@ def blackbody(n=256):
     return out
 
 
-def simulate(res=28, frames=140, buoyancy=0.5, verbose=True):
+def simulate(res=28, frames=140, warmup=60, buoyancy=0.35, dissipation=0.055,
+             drag=0.03, verbose=True):
     """Integrate a buoyant plume; return (density frames, velocity frames).
+
+    ``warmup`` steps are integrated and thrown away, and ``dissipation`` bleeds
+    density each step.  Both matter for the same reason: without dissipation
+    the closed box accumulates mass without bound (the source never stops) and
+    the plume turns into a rectangular solid of smoke by the last frames, and
+    without a warm-up the early frames are an almost empty box.  Together they
+    put the *recorded* sequence straight into the quasi-steady regime, so the
+    whole animation is legible and one transfer function suits every frame.
 
     ``density[i]`` is an (nx, ny, nz) array; ``velocity[i]`` is a (3, nx, ny,
     nz) array of the collocated velocity, sampled at cell centres so it can be
@@ -96,46 +112,79 @@ def simulate(res=28, frames=140, buoyancy=0.5, verbose=True):
                                  extrapolation.BOUNDARY, bounds=bounds, **shape)
 
     dens, vels = [], []
+    total = warmup + frames
+    done = 0
     try:
         from tqdm import trange
-        steps = trange(frames, desc="simulating")
+        steps = trange(total, desc="simulating")
     except ImportError:                        # tqdm is an extra, not a dep
-        steps = range(frames)
+        steps = range(total)
 
     for _ in steps:
         density = advect.mac_cormack(density, velocity, dt=1.0) + inflow
+        density = density * (1.0 - dissipation)   # bleed mass out; the box is
+        # closed (BOUNDARY extrapolation) and the source never stops, so with
+        # this the field would grow until the whole box is opaque
         velocity = advect.mac_cormack(velocity, velocity, dt=1.0) \
             + (density * vec(x=0, y=buoyancy, z=0)).at(velocity)
+        velocity = velocity * (1.0 - drag)   # damp box-scale sloshing.  A
+        # closed cavity heated from below oscillates (the whole cell rolls
+        # over), and that breathing is what makes the plume swell to a slab
+        # and then vanish between frames.
         velocity, _ = fluid.make_incompressible(
             velocity, solve=Solve('CG', rel_tol=1e-3, abs_tol=1e-3,
                                   max_iterations=2000))
 
-        dens.append(density.values.numpy('x,y,z'))
-        v = velocity.at(density).values.numpy('vector,x,y,z')
-        vels.append(np.asarray(v, dtype=np.float32))
+        done += 1
+        if done > warmup:
+            dens.append(density.values.numpy('x,y,z'))
+            v = velocity.at(density).values.numpy('vector,x,y,z')
+            vels.append(np.asarray(v, dtype=np.float32))
 
     if verbose:
         d = np.asarray(dens)
-        print(f"simulated {frames} frames at {res}x{2*res}x{res} "
-              f"({d.size/1e6:.1f}M voxels); density max {d.max():.3f}")
+        print(f"simulated {frames} frames at {res}x{2*res}x{res} after "
+              f"{warmup} warm-up steps ({d.size/1e6:.1f}M voxels); "
+              f"density p50 {np.percentile(d, 50):.3f} p99 {np.percentile(d, 99):.3f} "
+              f"max {d.max():.3f}")
     return dens, vels
+
+
+def normalise_display(dens, floor_frac=0.35):
+    """Scale every frame into one common display range.
+
+    A single transfer function has to serve 140 frames whose peak density
+    varies by more than an order of magnitude.  Scale it off a global peak and
+    the burst frames saturate into a solid slab while the quiet ones vanish --
+    which is exactly how the first version read ("wispy at the beginning, a
+    rectangular solid at the end").  Each frame is brought to the *median*
+    frame's peak instead, with a floor so a nearly empty frame is amplified by
+    at most 1/floor_frac and cannot turn into grain.  The plume's own time
+    evolution survives -- only the display range is levelled.
+    """
+    peaks = [float(np.percentile(d, 99.0)) for d in dens]
+    ref = float(np.median(peaks)) or 1.0
+    return [d * (ref / max(pk, floor_frac * ref)) for d, pk in zip(dens, peaks)]
 
 
 def build_scene(dens, vels, spacing, args):
     """Volume + shells + streamlines, as TemporalActors so they animate."""
+    dens = normalise_display(dens)
     actors = []
     hi = float(np.percentile(dens, 99.5))
+    # Deliberately gentle: at 0.97 the plume occluded itself into a solid.  The
+    # cores may read pale, but you can see *into* the volume at every depth.
 
     # 1. Ray-cast volume, blackbody, gradient opacity -------------------------
     vol = VolumeActor(dens, spacing=spacing, color_points=blackbody(),
-                      opacity_points=[(0.0, 0.0), (0.35 * hi, 0.28),
-                                      (hi, 0.97)])
+                      opacity_points=[(0.0, 0.0), (0.15 * hi, 0.05),
+                                      (0.50 * hi, 0.18), (hi, 0.45)])
     gx, gy, gz = gradient_field(dens[0], spacing)
     g_hi = float(np.percentile(np.sqrt(gx * gx + gy * gy + gz * gz), 99.0)) or 1.0
     gop = vtk.vtkPiecewiseFunction()
     gop.AddPoint(0.0, 0.0)
-    gop.AddPoint(0.30 * g_hi, 0.25)
-    gop.AddPoint(g_hi, 1.0)
+    gop.AddPoint(0.30 * g_hi, 0.18)
+    gop.AddPoint(g_hi, 0.85)
     vol.prop.SetGradientOpacity(gop)             # flat interior -> see-through
     vol.prop.SetSpecular(0.5)
     vol.prop.SetSpecularPower(48)
@@ -146,10 +195,9 @@ def build_scene(dens, vels, spacing, args):
 
     # 2. Translucent shells: a cool foil to the fire -------------------------
     shells = IsosurfaceActor(dens, spacing=spacing,
-                             iso_values=[0.4 * hi, 0.8 * hi, 1.3 * hi],
-                             colors=[(0.15, 0.85, 0.95), (0.55, 0.95, 1.0),
-                                     (0.9, 1.0, 1.0)],
-                             opacity=0.22)
+                             iso_values=[0.6 * hi, 1.4 * hi],
+                             colors=[(0.35, 0.85, 0.95), (0.75, 0.95, 1.0)],
+                             opacity=0.08)
     actors.append(shells)
 
     # 3. Streamlines coloured by speed ---------------------------------------
@@ -190,7 +238,16 @@ def main():
                         "crosses int32 at 46340 cells")
     p.add_argument("--frames", type=int, default=140,
                    help="time steps to integrate and animate")
-    p.add_argument("--buoyancy", type=float, default=0.5)
+    p.add_argument("--buoyancy", type=float, default=0.4)
+    p.add_argument("--warmup", type=int, default=60,
+                   help="steps integrated and discarded first, so the "
+                        "recorded run starts in the steady regime")
+    p.add_argument("--drag", type=float, default=0.03,
+                   help="velocity damping per step; suppresses the "
+                        "box-scale sloshing that makes the plume breathe")
+    p.add_argument("--dissipation", type=float, default=0.055,
+                   help="density bled per step; without it the closed box "
+                        "accumulates mass until the plume is a slab")
     p.add_argument("--frame", type=int, default=110,
                    help="which time step to draw for the still PNG")
     p.add_argument("--png", default="docs/smoke4d.png")
@@ -199,8 +256,9 @@ def main():
                    help="animate in a Viewer4D window instead of writing a PNG")
     args = p.parse_args()
 
-    dens, vels = simulate(res=args.res, frames=args.frames,
-                          buoyancy=args.buoyancy)
+    dens, vels = simulate(res=args.res, frames=args.frames, warmup=args.warmup,
+                          buoyancy=args.buoyancy, dissipation=args.dissipation,
+                          drag=args.drag)
     spacing = (100.0 / args.res, 200.0 / (args.res * 2), 100.0 / args.res)
     actors, _ = build_scene(dens, vels, spacing, args)
 

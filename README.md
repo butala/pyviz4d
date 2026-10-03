@@ -143,10 +143,14 @@ and you get a different plume.
 Every time step is drawn three ways at once, which is what makes it read as
 volume rather than as geometry:
 
-* a **ray-cast volume** on a blackbody ramp — cool shadow, ember, orange, gold,
-  white-hot core — with **gradient opacity**, so the flat interior stays
+* a **ray-cast volume** on a sunset ramp — indigo shadow, violet, magenta,
+  coral, cream — with **gradient opacity**, so the flat interior stays
   see-through and only the *edges* of the wisps accumulate. That single knob is
-  the difference between "fog" and "smoke".
+  the difference between "fog" and "smoke".  The ramp is deliberately *not*
+  blackbody: dark orange in the middle of a fire ramp composited over a
+  near-black ground is brown, which is what most of the volume ends up being.
+  Keeping the whole low half cool means the thin smoke reads violet and only
+  the dense core turns warm.
 * **translucent isosurface shells** in electric cyan, a cool foil to the fire.
 * **streamlines** through the velocity field coloured by speed, so the vortices
   that give the plume its curl are visible rather than implied.
@@ -155,6 +159,27 @@ volume rather than as geometry:
 to scrub); without it you get an offscreen still of any `--frame`. The grid
 ceiling is `--res 28` — PhiFlow's projection builds a sparse normal matrix with
 n² entries, and n = 2·res³ crosses int32 at 46 340 cells.
+
+Three settings exist so the run is legible from its first frame to its last,
+which a naive setup is not:
+
+* **`--dissipation`** bleeds density every step. The box is closed and the
+  source never stops, so without it mass grows until the plume is literally a
+  rectangular solid of smoke.
+* **`--drag`** damps velocity, which suppresses the box-scale sloshing that
+  makes a closed cavity heated from below swell and collapse. (Opening the
+  boundary instead — the textbook fix — makes Φ-ML's CG pressure solve diverge,
+  so this is the workable alternative.)
+* **`--warmup`** steps are integrated and thrown away first, so the recorded
+  run starts in the interesting regime rather than from an empty box.
+
+And the display range is levelled per frame (`normalise_display`): one
+transfer function has to serve 140 frames whose peak density varies by an order
+of magnitude, and scaling it off a global peak makes burst frames saturate
+while quiet ones vanish. Measured across the first, middle and last frames,
+the fraction of the image carrying real structure now stays in 0.12–0.18
+(it used to swing by 0.63), and the brown band of the hue wheel is at 0.4–2%
+of coloured pixels.
 
 ### Paper-faithful PlumeViz figures
 
