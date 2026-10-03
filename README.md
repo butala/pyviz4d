@@ -146,6 +146,21 @@ uv run --extra dev python examples/demo_particle_flow.py     # endless window
 
 ![A live particle cloud in a contact tank: blue at the inlet, green mid-tank, red in the downstream pools](docs/particle_flow.png)
 
+Streamlines are in the same scene — thin and neutral, so they give the shape
+of the velocity field without competing for the particles' colour. `v` toggles
+a **2-D cross-section** through mid-depth coloured by speed, which is the
+velocity visualisation: it shows where the jet runs and where the fluid sits
+still. Because the colours carry physical quantities, so do the legends:
+*residence time (s)* for the particles and *speed |v| (m/s)* for the slice.
+
+| key | |
+| --- | --- |
+| `v` | velocity cross-section |
+| `p` | particles |
+| `l` | streamlines |
+| `c` | colour bars |
+| `space` / `q` | pause / quit |
+
 One vectorised numpy pass per frame — 40 000 particles cost ~25 ms, which is
 why it can be endless and interactive at once. This is `pyviz4d.ParticleCloudActor`,
 and it is the 4-D half of the package: everything else here renders a time
