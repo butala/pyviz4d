@@ -46,6 +46,27 @@ def get_color(name):
     return tuple(matplotlib.colors.to_rgb(name))
 
 
+def _rgba(color, alpha, n):
+    """Per-element RGBA as a four-component ``vtkUnsignedCharArray``.
+
+    ``color`` and ``alpha`` may be scalars (broadcast over ``n`` elements) or
+    per-element sequences, with values as floats in [0, 1].
+    """
+    if not isinstance(color[0], Iterable):
+        color = repeat(color, n)
+    if not isinstance(alpha, Iterable):
+        alpha = repeat(alpha, n)
+
+    arr = vtk.vtkUnsignedCharArray()
+    arr.SetNumberOfComponents(4)
+    for color_i, alpha_i in zip(color, alpha):
+        arr.InsertNextTuple4(int(color_i[0] * 255),
+                             int(color_i[1] * 255),
+                             int(color_i[2] * 255),
+                             int(alpha_i * 255))
+    return arr
+
+
 def line_source(xyz1, xyz2, color=None, alpha=None):
     """PolyData of straight segments from ``xyz1[i]`` to ``xyz2[i]``.
 
@@ -71,12 +92,8 @@ def line_source(xyz1, xyz2, color=None, alpha=None):
 
     N = max(len(xyz1), len(xyz2))
 
-    if color is not None:
-        assert alpha is not None
-        if not isinstance(color[0], Iterable):
-            color = repeat(color, N)
-        if not isinstance(alpha, Iterable):
-            alpha = repeat(alpha, N)
+    if color is not None and alpha is None:
+        raise ValueError("alpha is required when color is given")
 
     points = vtk.vtkPoints()
     for xyz1_i in xyz1:
@@ -95,14 +112,7 @@ def line_source(xyz1, xyz2, color=None, alpha=None):
     polydata.SetLines(lines)
 
     if color is not None:
-        colors = vtk.vtkUnsignedCharArray()
-        colors.SetNumberOfComponents(4)
-        for color_i, alpha_i in zip(color, alpha):
-            colors.InsertNextTuple4(int(color_i[0] * 255),
-                                    int(color_i[1] * 255),
-                                    int(color_i[2] * 255),
-                                    int(alpha_i * 255))
-        polydata.GetCellData().SetScalars(colors)
+        polydata.GetCellData().SetScalars(_rgba(color, alpha, N))
 
     return polydata
 
@@ -147,27 +157,13 @@ def point_actor(xyz, color=None, size=100, phi_resolution=10, theta_resolution=1
 
     N = len(xyz)
 
-    if not isinstance(color[0], Iterable):
-        color = repeat(color, N)
-
-    if not isinstance(alpha, Iterable):
-        alpha = repeat(alpha, N)
-
     points = vtk.vtkPoints()
     for xyz_i in xyz:
         points.InsertNextPoint(xyz_i)
 
     polydata = vtk.vtkPolyData()
     polydata.SetPoints(points)
-
-    colors = vtk.vtkUnsignedCharArray()
-    colors.SetNumberOfComponents(4)
-    for color_i, alpha_i in zip(color, alpha):
-        colors.InsertNextTuple4(int(color_i[0] * 255),
-                                int(color_i[1] * 255),
-                                int(color_i[2] * 255),
-                                int(alpha_i * 255))
-    polydata.GetPointData().SetScalars(colors)
+    polydata.GetPointData().SetScalars(_rgba(color, alpha, N))
 
     sphere = vtk.vtkSphereSource()
     sphere.SetRadius(size)

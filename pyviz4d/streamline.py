@@ -24,27 +24,40 @@ def gradient_field(volume: np.ndarray, spacing=(1.0, 1.0, 1.0)):
     return gx, gy, gz
 
 
-def vector_field_to_vtk(gx: np.ndarray, gy: np.ndarray, gz: np.ndarray,
-                        spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0),
-                        array_name: str = "vectors"):
-    """Pack three (X, Y, Z) component arrays into a vtkImageData vector field."""
-    assert gx.shape == gy.shape == gz.shape, "component shapes must match"
+def _vector_array(gx: np.ndarray, gy: np.ndarray, gz: np.ndarray,
+                  array_name: str = "vectors") -> vtk.vtkDataArray:
+    """Three (X, Y, Z) component arrays -> one flat vtkFloatArray of vectors.
+
+    Fortran-order flatten, so x varies fastest and matches vtkImageData point
+    ordering.  Both :func:`vector_field_to_vtk` and StreamlineActor's per-frame
+    swap pack through here.
+    """
+    if gx.shape != gy.shape or gx.shape != gz.shape:
+        raise ValueError(f"component shapes must match, got "
+                         f"{gx.shape}, {gy.shape}, {gz.shape}")
     nx, ny, nz = gx.shape
 
-    image = vtk.vtkImageData()
-    image.SetDimensions(nx, ny, nz)
-    image.SetSpacing(*spacing)
-    image.SetOrigin(*origin)
-
     flat = np.empty((nx * ny * nz, 3), dtype=np.float32)
-    # Fortran-order flatten -> x varies fastest, matching vtkImageData ordering.
     flat[:, 0] = np.ascontiguousarray(gx.flatten(order="F"))
     flat[:, 1] = np.ascontiguousarray(gy.flatten(order="F"))
     flat[:, 2] = np.ascontiguousarray(gz.flatten(order="F"))
 
     arr = numpy_support.numpy_to_vtk(flat, deep=True, array_type=vtk.VTK_FLOAT)
     arr.SetName(array_name)
-    image.GetPointData().SetVectors(arr)
+    return arr
+
+
+def vector_field_to_vtk(gx: np.ndarray, gy: np.ndarray, gz: np.ndarray,
+                        spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0),
+                        array_name: str = "vectors"):
+    """Pack three (X, Y, Z) component arrays into a vtkImageData vector field."""
+    nx, ny, nz = gx.shape
+
+    image = vtk.vtkImageData()
+    image.SetDimensions(nx, ny, nz)
+    image.SetSpacing(*spacing)
+    image.SetOrigin(*origin)
+    image.GetPointData().SetVectors(_vector_array(gx, gy, gz, array_name))
     return image
 
 
@@ -94,13 +107,17 @@ def extract_centerline(volume: np.ndarray, spacing=(1.0, 1.0, 1.0),
     return pts, vals
 
 
-def polydata_from_points(points: np.ndarray, closed: bool = False):
-    """Turn an (N, 3) array into a vtkPolyData polyline."""
-    pd = vtk.vtkPolyData()
+def _set_polyline(poly: vtk.vtkPolyData, points: np.ndarray, closed: bool = False):
+    """Point ``poly`` at a polyline through ``points``, in place.
+
+    In place because callers like CenterlineActor own the polydata and have
+    downstream filters wired to it (a tube filter does not survive being
+    re-pointed at a new input object mid-stream).
+    """
     vpts = vtk.vtkPoints()
     for p in points:
         vpts.InsertNextPoint(*p)
-    pd.SetPoints(vpts)
+    poly.SetPoints(vpts)
 
     lines = vtk.vtkCellArray()
     n = len(points)
@@ -109,7 +126,14 @@ def polydata_from_points(points: np.ndarray, closed: bool = False):
         lines.InsertCellPoint(i)
     if closed and n:
         lines.InsertCellPoint(0)
-    pd.SetLines(lines)
+    poly.SetLines(lines)
+    poly.Modified()
+
+
+def polydata_from_points(points: np.ndarray, closed: bool = False):
+    """Turn an (N, 3) array into a vtkPolyData polyline."""
+    pd = vtk.vtkPolyData()
+    _set_polyline(pd, points, closed=closed)
     return pd
 
 
@@ -141,6 +165,33 @@ def centerline_seeds(volume: np.ndarray, spacing=(1.0, 1.0, 1.0),
     return pd
 
 
+def apply_tracer_settings(tracer, direction: str = "both",
+                          max_propagation: float = 100.0,
+                          initial_step: float = 0.05, max_steps: int = 2000,
+                          terminal_speed: float = 1e-12):
+    """The one tracer configuration :func:`trace_streamlines` and StreamlineActor share.
+
+    RK4, a point locator, no vorticity, and a step size band of
+    ``[0.1, 10] x initial_step``.  ``direction`` is "forward", "backward" or
+    "both".
+    """
+    tracer.SetIntegrator(vtk.vtkRungeKutta4())
+    if direction == "forward":
+        tracer.SetIntegrationDirectionToForward()
+    elif direction == "backward":
+        tracer.SetIntegrationDirectionToBackward()
+    else:
+        tracer.SetIntegrationDirectionToBoth()
+    tracer.SetMaximumPropagation(max_propagation)
+    tracer.SetInitialIntegrationStep(initial_step)
+    tracer.SetMinimumIntegrationStep(initial_step * 0.1)
+    tracer.SetMaximumIntegrationStep(initial_step * 10.0)
+    tracer.SetMaximumNumberOfSteps(max_steps)
+    tracer.SetTerminalSpeed(terminal_speed)
+    tracer.SetInterpolatorTypeToDataSetPointLocator()
+    tracer.SetComputeVorticity(False)
+
+
 def trace_streamlines(vector_field: vtk.vtkImageData, seeds: vtk.vtkPolyData,
                       direction: str = "both", max_propagation: float = 100.0,
                       initial_step: float = 0.05, max_steps: int = 2000,
@@ -152,23 +203,10 @@ def trace_streamlines(vector_field: vtk.vtkImageData, seeds: vtk.vtkPolyData,
     tracer = vtk.vtkStreamTracer()
     tracer.SetInputDataObject(vector_field)
     tracer.SetSourceData(seeds)
-    tracer.SetIntegrator(vtk.vtkRungeKutta4())
-
-    if direction == "forward":
-        tracer.SetIntegrationDirectionToForward()
-    elif direction == "backward":
-        tracer.SetIntegrationDirectionToBackward()
-    else:
-        tracer.SetIntegrationDirectionToBoth()
-
-    tracer.SetMaximumPropagation(max_propagation)
-    tracer.SetInitialIntegrationStep(initial_step)
-    tracer.SetMinimumIntegrationStep(initial_step * 0.1)
-    tracer.SetMaximumIntegrationStep(initial_step * 10.0)
-    tracer.SetMaximumNumberOfSteps(max_steps)
-    tracer.SetTerminalSpeed(terminal_speed)
-    tracer.SetInterpolatorTypeToDataSetPointLocator()
-    tracer.SetComputeVorticity(False)
+    apply_tracer_settings(tracer, direction=direction,
+                          max_propagation=max_propagation,
+                          initial_step=initial_step, max_steps=max_steps,
+                          terminal_speed=terminal_speed)
     tracer.Update()
     return tracer.GetOutput()
 
@@ -224,18 +262,7 @@ class CenterlineActor(TemporalActor):
                                     smooth_window=self.smooth_window)
         if len(pts) < 2:
             return
-
-        vpts = vtk.vtkPoints()
-        for p in pts:
-            vpts.InsertNextPoint(*p)
-        self.poly.SetPoints(vpts)
-
-        lines = vtk.vtkCellArray()
-        lines.InsertNextCell(len(pts))
-        for i in range(len(pts)):
-            lines.InsertCellPoint(i)
-        self.poly.SetLines(lines)
-        self.poly.Modified()
+        _set_polyline(self.poly, pts)
 
 
 class StreamlineActor(TemporalActor):
@@ -289,21 +316,10 @@ class StreamlineActor(TemporalActor):
         super().__init__(self.actor)
 
     def _apply_tracer_settings(self):
-        t = self.tracer
-        if self.direction == "forward":
-            t.SetIntegrationDirectionToForward()
-        elif self.direction == "backward":
-            t.SetIntegrationDirectionToBackward()
-        else:
-            t.SetIntegrationDirectionToBoth()
-        t.SetMaximumPropagation(self.max_propagation)
-        t.SetInitialIntegrationStep(self.initial_step)
-        t.SetMinimumIntegrationStep(self.initial_step * 0.1)
-        t.SetMaximumIntegrationStep(self.initial_step * 10.0)
-        t.SetMaximumNumberOfSteps(self.max_steps)
-        t.SetTerminalSpeed(1e-12)
-        t.SetInterpolatorTypeToDataSetPointLocator()
-        t.SetComputeVorticity(False)
+        apply_tracer_settings(self.tracer, direction=self.direction,
+                              max_propagation=self.max_propagation,
+                              initial_step=self.initial_step,
+                              max_steps=self.max_steps)
 
     def _set_seeds(self, frame_idx):
         if self.seeds_fn is not None:
@@ -361,13 +377,7 @@ class StreamlineActor(TemporalActor):
         self.current_idx = frame_idx
 
         gx, gy, gz = self.frames_vector[frame_idx]
-        nx, ny, nz = gx.shape
-        flat = np.empty((nx * ny * nz, 3), dtype=np.float32)
-        flat[:, 0] = np.ascontiguousarray(gx.flatten(order="F"))
-        flat[:, 1] = np.ascontiguousarray(gy.flatten(order="F"))
-        flat[:, 2] = np.ascontiguousarray(gz.flatten(order="F"))
-        arr = numpy_support.numpy_to_vtk(flat, deep=True, array_type=vtk.VTK_FLOAT)
-        arr.SetName("vectors")
+        arr = _vector_array(gx, gy, gz)
         self.field.GetPointData().SetVectors(arr)
         self.field.Modified()
 
