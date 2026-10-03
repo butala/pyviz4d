@@ -131,6 +131,26 @@ uv run --extra geo python examples/demo_lod1_pudong.py               # OSM -> Lo
 `sim_output/`, and the two PlumeViz demos expect the COVIS contest frames under
 `data/covis` (override with `--data-dir`).
 
+### Colourful streamtraces
+
+`examples/demo_streamtraces.py` — the CFD streamtrace figure from hydraulic
+engineering: long, smooth, rainbow tubes threading a baffled contact tank,
+coloured by velocity magnitude.
+
+```bash
+uv run --extra dev python examples/demo_streamtraces.py            # -> docs/streamtraces.png
+uv run --extra dev python examples/demo_streamtraces.py --interactive
+```
+
+![Streamtraces through a serpentine baffled contact tank, coloured by velocity magnitude from blue to red](docs/streamtraces.png)
+
+The flow is analytic — a meandering jet, a weak secondary roll and point
+vortices in the baffle wakes — which is the whole reason these read as ribbons
+rather than as spaghetti: a steady smooth field gives smooth lines that can
+never cross. Seeds are a jittered curtain filling the inlet cross-section, so
+the ribbons separate and fold and the structure shows. `--n-seeds-y`,
+`--n-seeds-z`, `--tube-radius` and `--length` trade density for clarity.
+
 ### Open scientific volumes
 
 `examples/demo_open_volume.py` renders three iconic scans from
