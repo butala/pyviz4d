@@ -13,13 +13,14 @@ simulation, not a canned dataset: re-run it with a different ``--frames`` or
 pyviz4d then renders every time step three ways at once, which is what makes
 the result read as volume rather than as geometry:
 
-* a **ray-cast volume** on a blackbody ramp (near-black shadow -> ember ->
-  orange -> gold -> white hot), with **gradient opacity** so the flat interior
-  stays see-through and only the edges of the wisps accumulate -- the single
-  biggest lever between "fog" and "smoke";
-* **translucent isosurface shells** in electric cyan, a cool foil to the fire;
-* **streamlines** through the velocity field, coloured by speed, so the
-  vortices that give the plume its curl are visible rather than implied.
+* a **ray-cast volume** on a sunset ramp (indigo shadow -> violet -> magenta
+  -> coral -> cream), with **gradient opacity** so the flat interior stays
+  see-through and only the edges of the wisps accumulate -- the single biggest
+  lever between "fog" and "smoke";
+* **translucent isosurface shells** in cyan, a cool foil;
+* **vortex-core ribbons** through the velocity field, seeded on |curl v| and
+  drawn as self-lit lime tubes -- green, because the smoke is violet at its
+  thin end and no blue-dominant accent survives against it.
 
 ``--interactive`` opens a Viewer4D window and animates the run with the time
 slider (space to pause); without it you get an offscreen still of a chosen
