@@ -131,6 +131,26 @@ uv run --extra geo python examples/demo_lod1_pudong.py               # OSM -> Lo
 `sim_output/`, and the two PlumeViz demos expect the COVIS contest frames under
 `data/covis` (override with `--data-dir`).
 
+### A live 4-D particle simulation
+
+`examples/demo_particle_flow.py` — not a pre-rendered animation. 40 000
+particles are advected through the tank flow with RK4 plus an eddy diffusivity
+and reborn at the inlet when they leave, so the cloud reaches a statistical
+steady state and **the simulation simply runs**, at the frame rate of the
+window, for as long as you let it. Semi-transparent gaussian splats, coloured
+by how long each particle has been in the tank.
+
+```bash
+uv run --extra dev python examples/demo_particle_flow.py     # endless window
+```
+
+![A live particle cloud in a contact tank: blue at the inlet, green mid-tank, red in the downstream pools](docs/particle_flow.png)
+
+One vectorised numpy pass per frame — 40 000 particles cost ~25 ms, which is
+why it can be endless and interactive at once. This is `pyviz4d.ParticleCloudActor`,
+and it is the 4-D half of the package: everything else here renders a time
+series, this one runs.
+
 ### Flow, transport and residence time in a contact tank
 
 `examples/demo_contact_tank.py` — a Monte Carlo particle simulation in a

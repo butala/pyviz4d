@@ -198,3 +198,36 @@ def test_volume_mapper_is_pinned_so_camera_moves_do_not_strobe():
     assert m.GetInteractiveAdjustSampleDistances() == 0
     assert m.GetSampleDistance() == pytest.approx(0.5)   # 0.5 * min(spacing)
     assert m.GetRequestedRenderMode() != 0                # 0 == Default, i.e. adaptive
+
+
+def test_particle_cloud_advects_recycles_and_runs_for_ever():
+    """The 4-D half: a cloud that advances and never runs dry.
+
+    Four things to hold: it steps, particles that leave are reborn (so the
+    population is constant and the simulation is endless), the buffer is
+    published to VTK each step, and the colour scale is applied.
+    """
+    from pyviz4d import ParticleCloudActor
+
+    def vel(x, y, z):                    # a uniform drift +x
+        return (np.ones_like(x), np.zeros_like(y), np.zeros_like(z))
+
+    cloud = ParticleCloudActor(vel, bounds=((0.0, 10.0), (0.0, 4.0), (0.0, 2.0)),
+                               inlet=((0.0, 0.5), (0.0, 4.0), (0.0, 2.0)),
+                               n=500, dt=0.1, kappa=0.01, opacity=0.2)
+    assert cloud.poly.GetNumberOfPoints() == 500
+    assert cloud.actor is not None
+
+    before = cloud.pos.copy()
+    cloud.update(0.0)
+    assert not np.allclose(before, cloud.pos)          # it moved
+    assert cloud.steps == 1
+
+    for _ in range(40):                                # long enough to cross
+        cloud.update(0.0)
+    assert cloud.poly.GetNumberOfPoints() == 500       # nobody died
+    assert np.all(cloud.pos[:, 0] <= 10.0)             # and nobody escaped
+    # ages reset on respawn, so nothing can be older than its own life here:
+    # at most the random 0..1 it started with plus every step taken.
+    assert cloud.age.max() < 1.0 + 41 * cloud.dt + 1e-9
+    assert tuple(cloud.rgba.GetTuple4(0))[3] == 51     # 0.2 * 255

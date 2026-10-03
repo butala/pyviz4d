@@ -7,6 +7,7 @@ which module each lives in.
 """
 from .cityjson import read_cityjson
 from .io import VTKSeriesWriter, parse_pvd
+from .particles import ParticleCloudActor
 from .primitives import (
     get_color,
     line_actor,
@@ -43,6 +44,7 @@ __all__ = [
     "EarthViewer4D",
     "IsosurfaceActor",
     "IsosurfaceSeriesActor",
+    "ParticleCloudActor",
     "PolyDataSeriesActor",
     "StreamlineActor",
     "TemporalActor",
