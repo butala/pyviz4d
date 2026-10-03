@@ -131,6 +131,25 @@ uv run --extra geo python examples/demo_lod1_pudong.py               # OSM -> Lo
 `sim_output/`, and the two PlumeViz demos expect the COVIS contest frames under
 `data/covis` (override with `--data-dir`).
 
+### Flow, transport and residence time in a contact tank
+
+`examples/demo_contact_tank.py` — a Monte Carlo particle simulation in a
+baffled contact tank, with the volume showing where the fluid speeds up and
+the particles coloured by how long they stayed.
+
+```bash
+uv run --extra dev python examples/demo_contact_tank.py            # -> docs/contact_tank.png
+uv run --extra dev python examples/demo_contact_tank.py --interactive
+```
+
+![A baffled contact tank: volume render of flow speed lighting up the three baffle gaps, subtle grey streamlines, and coloured particles](docs/contact_tank.png)
+
+Particles are released at the inlet and integrated through the flow with RK4
+plus an eddy diffusivity, so this is a real Monte Carlo rather than a
+streamline plot — and it answers the question a contact tank is judged on,
+the residence time distribution, which the run prints (here: p10 4.3 vs
+median 10.0, i.e. measurable short-circuiting).
+
 ### Colourful streamtraces
 
 `examples/demo_streamtraces.py` — the CFD streamtrace figure from hydraulic
