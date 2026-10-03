@@ -484,7 +484,7 @@ def main():
     p.add_argument("--streamline-colormap", default="jet")
     p.add_argument("--streamline-width", type=float, default=1.5)
 
-    p.add_argument("--out", default="examples/plumeviz_fig3.png")
+    p.add_argument("--out", default="docs/plumeviz_fig3.png")
     args = p.parse_args()
 
     register_plume_colormaps()

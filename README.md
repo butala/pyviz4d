@@ -5,6 +5,8 @@ no PyVista. Time-varying actors, volume rendering, streamlines, CityJSON city
 models, Earth textures, and a small palette of primitives for drawing lines,
 points and spherical voxels.
 
+![A hydrothermal plume: log-scaled ray-cast volume, translucent isosurface envelope and green centreline](docs/plumeviz_preview.png)
+
 ## Installation
 
 The core install is deliberately small — `vtk` + `numpy` + `matplotlib`, enough
@@ -134,7 +136,9 @@ uv run --extra geo python examples/demo_lod1_pudong.py               # OSM -> Lo
 `examples/demo_plumeviz_fig3.py` reproduces the visual language of the paper's
 Figure 3 — grey background, soft golden ray-cast volume, translucent blue
 isosurface envelope, green plume centreline, left-hand *Plume Height (m)* scale
-— as one high-quality static frame. It writes `examples/plumeviz_fig3.png`.
+— as one high-quality static frame. It writes `docs/plumeviz_fig3.png`.
+
+![Figure 3 style: ray-cast volume, isosurface envelope and plume centreline](docs/plumeviz_fig3.png)
 
 The same script renders the other facets via `--mode`. The COVIS `Id_filt`
 volume is ~99% noise near ~1e-9 and the near-seafloor plume is ~1000x brighter
@@ -147,13 +151,17 @@ the transfer function, and frames the rising column from a near-side 3/4 camera.
 ```bash
 # Figure 5 style: RK4 velocity streamlines, coloured by speed
 uv run --with scipy python examples/demo_plumeviz_fig3.py --mode streamlines \
-    --out examples/plumeviz_fig5.png
+    --out docs/plumeviz_fig5.png
 
 # Figure 6 style: grey vs rainbow colormap, side by side
 uv run --with scipy python examples/demo_plumeviz_fig3.py --mode colormaps \
     --colormap plume_gray --compare-colormap gist_rainbow \
-    --size 560 900 --out examples/plumeviz_fig6.png
+    --size 560 900 --out docs/plumeviz_fig6.png
 ```
+
+![Figure 5 style: RK4 velocity streamlines coloured by speed](docs/plumeviz_fig5.png)
+
+![Figure 6 style: the same volume with a grey and a rainbow colormap side by side](docs/plumeviz_fig6.png)
 
 The Figure-5 velocity field is *synthetic* — the contest does not release the
 Doppler data — but it is shaped by the real backscatter, so the streamlines rise

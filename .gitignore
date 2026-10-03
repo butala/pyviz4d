@@ -15,7 +15,7 @@ sim_output/
 output.mp4
 *.mp4
 *.png
-!examples/*.png
+!docs/*.png
 
 # Agent session logs (churn every turn)
 .agent-shell/
