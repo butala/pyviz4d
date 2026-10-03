@@ -52,14 +52,24 @@ from pyviz4d.volume import power_opacity
 # ---------------------------------------------------------------------------
 
 def register_plume_colormaps():
-    """Register the paper's warm gold ramp (dark amber -> gold -> cream)."""
+    """Register the warm gold ramp the paper uses, extended for depth.
+
+    The paper's ramp runs amber -> gold -> cream.  Starting that high means the
+    volume never gets a dark end, so it has no internal contrast and reads as a
+    pale smear (measured: mean saturation 0.03 against a grey ground).  This
+    keeps the same hue journey but begins near black in a cool shadow, so thin
+    wisps are dark and only the dense core burns gold -- which is both closer to
+    what the paper's *images* look like and far more striking.
+    """
     import matplotlib
     from matplotlib.colors import LinearSegmentedColormap
     if "plume_gold" not in matplotlib.colormaps():
         matplotlib.colormaps.register(LinearSegmentedColormap.from_list("plume_gold", [
-            (0.00, (0.70, 0.52, 0.20)),
-            (0.50, (0.99, 0.84, 0.42)),
-            (1.00, (1.00, 0.99, 0.90)),
+            (0.00, (0.015, 0.010, 0.045)),  # cool near-black shadow
+            (0.18, (0.28, 0.04, 0.13)),     # ember
+            (0.45, (0.86, 0.30, 0.05)),     # orange
+            (0.72, (1.00, 0.74, 0.14)),     # gold
+            (1.00, (1.00, 0.98, 0.90)),     # white-hot core
         ]))
     if "plume_gray" not in matplotlib.colormaps():
         matplotlib.colormaps.register(LinearSegmentedColormap.from_list("plume_gray", [
@@ -146,19 +156,31 @@ def build_scene(log_display, sm_iso, spacing, origin, shape, args):
     mapper = vtk.vtkSmartVolumeMapper()
     mapper.SetInputData(image)
     mapper.SetBlendModeToComposite()
-    mapper.SetAutoAdjustSampleDistances(0)
-    mapper.SetSampleDistance(spacing[0] * 0.35)
+    mapper.SetAutoAdjustSampleDistances(1)
+    mapper.SetSampleDistance(float(min(spacing)) * 0.25)
 
     prop = vtk.vtkVolumeProperty()
-    prop.SetColor(matplotlib_ctf(args.colormap, lo, hi, n=128))
+    prop.SetColor(matplotlib_ctf(args.colormap, lo, hi, n=256))
     prop.SetScalarOpacity(power_opacity(lo, hi, power=args.opacity_power,
-                                        max_opacity=args.max_opacity, n=128))
+                                        max_opacity=args.max_opacity, n=256))
+    if not args.no_gradient_opacity:
+        # Gradient opacity is what stops a volume reading as fog: flat regions
+        # (the pale interior) stay see-through and only the *edges* of the wisps
+        # build up density.  The magnitude scale is data-driven, so measure it.
+        gx, gy, gz = np.gradient(log_display.astype(np.float32), *spacing)
+        gmag = np.sqrt(gx * gx + gy * gy + gz * gz)
+        g_hi = float(np.percentile(gmag, 99.0)) or 1.0
+        gop = vtk.vtkPiecewiseFunction()
+        gop.AddPoint(0.0, 0.0)
+        gop.AddPoint(0.30 * g_hi, 0.20)
+        gop.AddPoint(g_hi, 1.0)
+        prop.SetGradientOpacity(gop)
     prop.ShadeOn()
     prop.SetInterpolationTypeToLinear()
-    prop.SetAmbient(0.45)
-    prop.SetDiffuse(0.85)
-    prop.SetSpecular(0.35)
-    prop.SetSpecularPower(30)
+    prop.SetAmbient(0.25)
+    prop.SetDiffuse(0.95)
+    prop.SetSpecular(0.55)
+    prop.SetSpecularPower(48)
 
     volume = vtk.vtkVolume()
     volume.SetMapper(mapper)
@@ -386,7 +408,14 @@ def annotate_height_scale(ren, bounds, args, path):
     img = Image.open(path).convert("RGB")
     dr = ImageDraw.Draw(img)
     axis_x = int(0.10 * args.size[0])
-    ink = (25, 25, 25)
+    # The ink has to sit on the *background*, which is user-settable and now
+    # defaults to near-black -- fixed dark ink vanished against it.
+    bg_lum = (0.2126 * args.background[0] + 0.7152 * args.background[1]
+              + 0.0722 * args.background[2])
+    ink = (20, 20, 20) if bg_lum > 0.35 else (238, 232, 220)
+    H = args.size[1]
+    y_base = min(max(y_base, -40.0), H + 40.0)      # a tight crop clips the
+    y_top = min(max(y_top, -40.0), H + 40.0)        # scale; keep it on-canvas
     dr.line([(axis_x, y_base), (axis_x, y_top)], fill=ink, width=3)
 
     try:
@@ -398,12 +427,13 @@ def annotate_height_scale(ren, bounds, args, path):
     z = tick
     while z <= z1 + 1e-6:
         yy = y_base + (y_top - y_base) * ((z - z0) / (z1 - z0))
-        dr.line([(axis_x, yy), (axis_x + 14, yy)], fill=ink, width=3)
-        dr.text((axis_x + 22, yy - 13), f"{z:.0f}", fill=(15, 15, 15), font=font)
+        if 4.0 <= yy <= H - 4.0:                   # only ticks that are visible
+            dr.line([(axis_x, yy), (axis_x + 14, yy)], fill=ink, width=3)
+            dr.text((axis_x + 22, yy - 13), f"{z:.0f}", fill=ink, font=font)
         z += args.tick_step
 
     dr.text((0.05 * args.size[0], 0.02 * args.size[1]), "Plume Height (m)",
-            fill=(10, 10, 10), font=font)
+            fill=ink, font=font)
     img.save(path)
     print(f"Annotated {path}")
 
@@ -448,8 +478,13 @@ def main():
     p.add_argument("--sigma-iso", type=float, default=2.2, help="smoothing for envelope + centreline")
     p.add_argument("--sigma-display", type=float, default=1.0, help="smoothing for the volume")
     p.add_argument("--prune-frac", type=float, default=0.30, help="drop components below this frac of the largest")
-    p.add_argument("--opacity-power", type=float, default=1.0)
-    p.add_argument("--max-opacity", type=float, default=0.92)
+    p.add_argument("--opacity-power", type=float, default=1.7,
+                   help=">1 keeps the pale interior transparent and reserves "
+                        "opacity for the dense core")
+    p.add_argument("--max-opacity", type=float, default=0.95)
+    p.add_argument("--no-gradient-opacity", action="store_true",
+                   help="scalar opacity only (gradient opacity is what keeps "
+                        "the volume from reading as fog)")
 
     p.add_argument("--iso-fraction", type=float, default=0.010,
                    help="envelope level as a fraction of the smoothed field max")
@@ -464,9 +499,13 @@ def main():
     p.add_argument("--centerline-color", nargs=3, type=float, default=[0.10, 0.80, 0.20])
     p.add_argument("--no-centerline", action="store_true")
 
-    p.add_argument("--background", nargs=3, type=float, default=[0.52, 0.52, 0.52])
+    p.add_argument("--background", nargs=3, type=float, default=[0.035, 0.035, 0.050],
+                   help="near-black by default so the gold reads at full "
+                        "contrast; pass 0.52 0.52 0.52 for the paper's grey")
     p.add_argument("--size", nargs=2, type=int, default=[960, 1200])
-    p.add_argument("--zoom", type=float, default=1.30)
+    p.add_argument("--zoom", type=float, default=3.0,
+                   help="camera zoom after ResetCamera; the plume is a thin "
+                        "column in a mostly empty box, so fit the plume")
     p.add_argument("--no-axis", action="store_true")
     p.add_argument("--tick-step", type=float, default=2.0)
 

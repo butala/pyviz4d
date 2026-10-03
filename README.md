@@ -5,7 +5,7 @@ no PyVista. Time-varying actors, volume rendering, streamlines, CityJSON city
 models, Earth textures, and a small palette of primitives for drawing lines,
 points and spherical voxels.
 
-![A hydrothermal plume: log-scaled ray-cast volume, translucent isosurface envelope and green centreline](docs/plumeviz_preview.png)
+![A 4-D buoyant smoke plume: blackbody ray-cast volume, cyan isosurface shells and speed-coloured streamlines, integrated forward in time by PhiFlow](docs/smoke4d.png)
 
 ## Installation
 
@@ -102,7 +102,7 @@ uv sync --extra all          # once; or --extra dev for the test suite
 | `demo_grid.py` | Multi-view grid with linked camera and time (`--nrows`, `--ncols`) |
 | `demo_cityjson.py` | Reading a CityJSON city model |
 | `demo_decoupled_pipeline.py` | Writing a VTK time series, then lazy-loading it |
-| `demo_phiflow.py` | PhiFlow smoke plume |
+| `demo_phiflow.py` | A **4-D simulation**: buoyant smoke plume, integrated in PhiFlow and ray-cast as fire (below) |
 | `demo_plumeviz.py` | COVIS hydrothermal plume: volume rendering + streamlines |
 | `demo_plumeviz_fig3.py` | Paper-faithful static figures (`--mode`) |
 | `validate_wgs84.py` | WGS84 conversion checks |
@@ -119,7 +119,7 @@ uv run --extra earth python examples/demo_4d.py                      # Earth + a
 uv run python examples/demo_grid.py --nrows 1 --ncols 2              # linked multi-view
 uv run --extra geo python examples/demo_cityjson.py                  # CityJSON city model
 uv run --with tqdm python examples/demo_decoupled_pipeline.py        # write + lazy-load series
-uv run --extra phiflow python examples/demo_phiflow.py               # PhiFlow smoke plume
+uv run --extra phiflow python examples/demo_phiflow.py               # 4-D smoke plume (simulated + ray-cast)
 uv run --with scipy python examples/demo_plumeviz.py                 # COVIS volume + streamlines
 uv run --with scipy python examples/demo_plumeviz_fig3.py            # paper-style static figure
 uv run --extra earth python examples/validate_wgs84.py               # visual WGS84 check
@@ -131,12 +131,44 @@ uv run --extra geo python examples/demo_lod1_pudong.py               # OSM -> Lo
 `sim_output/`, and the two PlumeViz demos expect the COVIS contest frames under
 `data/covis` (override with `--data-dir`).
 
+### A 4-D simulation: buoyant smoke plume
+
+`examples/demo_phiflow.py` is a real simulation rather than a canned dataset.
+[PhiFlow](https://github.com/tum-pbs/PhiFlow) (BSD-3, Holl et al. 2019)
+integrates a Boussinesq buoyant plume in a box — MacCormack advection for
+density and velocity, a sparse CG projection for incompressibility — so three
+spatial dimensions *plus time*: 140 frames in about 30 s on a laptop. Re-run it
+and you get a different plume.
+
+Every time step is drawn three ways at once, which is what makes it read as
+volume rather than as geometry:
+
+* a **ray-cast volume** on a blackbody ramp — cool shadow, ember, orange, gold,
+  white-hot core — with **gradient opacity**, so the flat interior stays
+  see-through and only the *edges* of the wisps accumulate. That single knob is
+  the difference between "fog" and "smoke".
+* **translucent isosurface shells** in electric cyan, a cool foil to the fire.
+* **streamlines** through the velocity field coloured by speed, so the vortices
+  that give the plume its curl are visible rather than implied.
+
+`--interactive` animates it in a `Viewer4D` window (space to pause, time slider
+to scrub); without it you get an offscreen still of any `--frame`. The grid
+ceiling is `--res 28` — PhiFlow's projection builds a sparse normal matrix with
+n² entries, and n = 2·res³ crosses int32 at 46 340 cells.
+
 ### Paper-faithful PlumeViz figures
 
 `examples/demo_plumeviz_fig3.py` reproduces the visual language of the paper's
 Figure 3 — grey background, soft golden ray-cast volume, translucent blue
 isosurface envelope, green plume centreline, left-hand *Plume Height (m)* scale
 — as one high-quality static frame. It writes `docs/plumeviz_fig3.png`.
+
+The figures are rendered on a near-black ground rather than the paper's grey:
+measured against the old grey frames the mean saturation went from 0.03 to
+0.32 and the p1–p99 contrast from 0.31 to 0.70, and the camera now frames the
+plume instead of the mostly-empty box around it (90% of the old frames was
+flat background). Pass `--background 0.52 0.52 0.52 --zoom 1.3` for the
+paper's original palette and framing.
 
 ![Figure 3 style: ray-cast volume, isosurface envelope and plume centreline](docs/plumeviz_fig3.png)
 

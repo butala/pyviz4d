@@ -320,7 +320,7 @@ def viewpoint(ren, cam):
 
 
 def render_to_png(actors, path, size=(800, 600), scale=1,
-                  bg_color=(0.15, 0.15, 0.15), camera=None):
+                  bg_color=(0.15, 0.15, 0.15), camera=None, zoom=1.0):
     """Render ``actors`` offscreen and write a PNG to ``path``.
 
     ``actors`` is a single ``vtkActor`` (or ``TemporalActor``) or an iterable of
@@ -328,6 +328,11 @@ def render_to_png(actors, path, size=(800, 600), scale=1,
     away, so this is a one-shot snapshot that needs no interactor and no
     ``start()`` loop.  ``camera`` may be a ``vtkCamera`` to copy the view from;
     otherwise the camera is reset to fit the scene.
+
+    ``zoom`` is applied *after* that fit, which is the only place it can be:
+    ``ResetCamera`` recomputes the camera distance and therefore discards any
+    radius or zoom set on ``camera`` beforehand.  Values above 1 tighten the
+    frame on a scene whose subject is small inside its bounding box.
     """
     if hasattr(actors, 'GetMapper') or hasattr(actors, 'actor'):
         actors = [actors]
@@ -345,5 +350,8 @@ def render_to_png(actors, path, size=(800, 600), scale=1,
     if camera is not None:
         ren.SetActiveCamera(camera)
     ren.ResetCamera()
+    if zoom != 1.0:
+        ren.GetActiveCamera().Zoom(float(zoom))
+        ren.ResetCameraClippingRange()
 
     return _render_window_to_png(ren_win, path, scale=scale)

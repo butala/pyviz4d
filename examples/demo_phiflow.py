@@ -1,110 +1,241 @@
+"""A visually striking 4-D smoke plume: PhiFlow in, pyviz4D out.
+
+    uv run --extra phiflow python examples/demo_phiflow.py            # still PNG
+    uv run --extra phiflow python examples/demo_phiflow.py --interactive
+
+Three spatial dimensions plus time: a buoyant plume is integrated forward in a
+box by [PhiFlow](https://github.com/tum-pbs/PhiFlow) (BSD-3, Holl et al. 2019)
+-- MacCormack advection for the density and the velocity, a Boussinesq buoyancy
+term, and a sparse CG projection for incompressibility.  That is a real
+simulation, not a canned dataset: re-run it with a different ``--frames`` or
+``--res`` and you get a different plume.
+
+pyviz4d then renders every time step three ways at once, which is what makes
+the result read as volume rather than as geometry:
+
+* a **ray-cast volume** on a blackbody ramp (near-black shadow -> ember ->
+  orange -> gold -> white hot), with **gradient opacity** so the flat interior
+  stays see-through and only the edges of the wisps accumulate -- the single
+  biggest lever between "fog" and "smoke";
+* **translucent isosurface shells** in electric cyan, a cool foil to the fire;
+* **streamlines** through the velocity field, coloured by speed, so the
+  vortices that give the plume its curl are visible rather than implied.
+
+``--interactive`` opens a Viewer4D window and animates the run with the time
+slider (space to pause); without it you get an offscreen still of a chosen
+``--frame``.
+
+Ported from the earlier isosurface-only sketch, which ray-cast nothing and
+therefore looked like a stack of coloured bubbles.
+"""
 import argparse
 
-import matplotlib.pyplot as plt
+import numpy as np
 import vtk
-from phi.flow import *
-from tqdm import trange
 
-from pyviz4d.viz import Viewer4D
-from pyviz4d.volume import IsosurfaceActor
+from pyviz4d import (
+    IsosurfaceActor,
+    StreamlineActor,
+    Viewer4D,
+    VolumeActor,
+    gradient_field,
+    render_to_png,
+    viewpoint,
+)
 
 
-def simulate_smoke(res=28, frames=200):
-    print(f"Simulating {frames} frames of smoke plume at resolution {res} using pure NumPy (this might take a moment)...")
+def blackbody(n=256):
+    """Blackbody ramp: cool shadow -> ember -> orange -> gold -> white hot.
 
-    # Simulation setup: Box is 100x200x100
+    Returned as ``[(scalar, r, g, b), ...]`` for VolumeActor's ``color_points``.
+    A single hue would read as a cutout; the ramp through two hues is what
+    makes a volume look incandescent.
+    """
+    stops = [(0.00, (0.010, 0.008, 0.030)),
+             (0.18, (0.26, 0.03, 0.14)),
+             (0.45, (0.85, 0.28, 0.05)),
+             (0.72, (1.00, 0.74, 0.14)),
+             (1.00, (1.00, 0.98, 0.90))]
+    xs = np.linspace(0.0, 1.0, n)
+    out = []
+    for t in xs:
+        for (a0, c0), (a1, c1) in zip(stops, stops[1:]):
+            if a0 <= t <= a1:
+                u = (t - a0) / (a1 - a0) if a1 > a0 else 0.0
+                r, g, b = (c0[k] + u * (c1[k] - c0[k]) for k in range(3))
+                out.append((t, r, g, b))
+                break
+    return out
+
+
+def simulate(res=28, frames=140, buoyancy=0.5, verbose=True):
+    """Integrate a buoyant plume; return (density frames, velocity frames).
+
+    ``density[i]`` is an (nx, ny, nz) array; ``velocity[i]`` is a (3, nx, ny,
+    nz) array of the collocated velocity, sampled at cell centres so it can be
+    fed straight to a stream tracer.
+    """
+    from phi.flow import (
+        Box,
+        CenteredGrid,
+        Solve,
+        Sphere,
+        StaggeredGrid,
+        advect,
+        extrapolation,
+        fluid,
+        vec,
+    )
+
     bounds = Box(x=(0, 100), y=(0, 200), z=(0, 100))
-    velocity = StaggeredGrid(0, extrapolation.BOUNDARY, x=res, y=res*2, z=res, bounds=bounds)
-    density = CenteredGrid(0, extrapolation.BOUNDARY, x=res, y=res*2, z=res, bounds=bounds)
+    shape = dict(x=res, y=res * 2, z=res)
+    velocity = StaggeredGrid(0, extrapolation.BOUNDARY, bounds=bounds, **shape)
+    density = CenteredGrid(0, extrapolation.BOUNDARY, bounds=bounds, **shape)
+    # A slightly off-centre source: perfectly symmetric plumes look synthetic.
+    inflow = 0.35 * CenteredGrid(Sphere(x=46, y=8, z=54, radius=9),
+                                 extrapolation.BOUNDARY, bounds=bounds, **shape)
 
-    # Source at the bottom center
-    source_sphere = Sphere(x=50, y=10, z=50, radius=10)
-    inflow = 0.2 * CenteredGrid(source_sphere, extrapolation.BOUNDARY, x=res, y=res*2, z=res, bounds=bounds)
+    dens, vels = [], []
+    try:
+        from tqdm import trange
+        steps = trange(frames, desc="simulating")
+    except ImportError:                        # tqdm is an extra, not a dep
+        steps = range(frames)
 
-    density_arrays = []
+    for _ in steps:
+        density = advect.mac_cormack(density, velocity, dt=1.0) + inflow
+        velocity = advect.mac_cormack(velocity, velocity, dt=1.0) \
+            + (density * vec(x=0, y=buoyancy, z=0)).at(velocity)
+        velocity, _ = fluid.make_incompressible(
+            velocity, solve=Solve('CG', rel_tol=1e-3, abs_tol=1e-3,
+                                  max_iterations=2000))
 
-    for _ in trange(frames, desc="Simulating smoke frames"):
-        density = advect.mac_cormack(density, velocity, dt=1) + inflow
-        buoyancy = (density * vec(x=0, y=0.1, z=0)).at(velocity)
+        dens.append(density.values.numpy('x,y,z'))
+        v = velocity.at(density).values.numpy('vector,x,y,z')
+        vels.append(np.asarray(v, dtype=np.float32))
 
-        # Advect velocity with high-order MacCormack to preserve vortices (reduced artificial diffusion)
-        velocity = advect.mac_cormack(velocity, velocity, dt=1) + buoyancy
+    if verbose:
+        d = np.asarray(dens)
+        print(f"simulated {frames} frames at {res}x{2*res}x{res} "
+              f"({d.size/1e6:.1f}M voxels); density max {d.max():.3f}")
+    return dens, vels
 
-        # With open boundaries, the default solver is perfectly stable and fast.
-        # We explicitly request 'scipy' CG solver which natively handles the sparse structure
-        # up to res=32 on the CPU without triggering the pure NumPy overflow error.
-        velocity, _ = fluid.make_incompressible(velocity, solve=Solve('CG', rel_tol=1e-3, abs_tol=1e-3, max_iterations=2000))
 
-        # PhiFlow arrays are typically (x, y, z). We extract the numpy array.
-        arr = density.values.numpy('x,y,z')
-        density_arrays.append(arr)
+def build_scene(dens, vels, spacing, args):
+    """Volume + shells + streamlines, as TemporalActors so they animate."""
+    actors = []
+    hi = float(np.percentile(dens, 99.5))
 
-    print("Simulation complete.")
-    return density_arrays
+    # 1. Ray-cast volume, blackbody, gradient opacity -------------------------
+    vol = VolumeActor(dens, spacing=spacing, color_points=blackbody(),
+                      opacity_points=[(0.0, 0.0), (0.35 * hi, 0.28),
+                                      (hi, 0.97)])
+    gx, gy, gz = gradient_field(dens[0], spacing)
+    g_hi = float(np.percentile(np.sqrt(gx * gx + gy * gy + gz * gz), 99.0)) or 1.0
+    gop = vtk.vtkPiecewiseFunction()
+    gop.AddPoint(0.0, 0.0)
+    gop.AddPoint(0.30 * g_hi, 0.25)
+    gop.AddPoint(g_hi, 1.0)
+    vol.prop.SetGradientOpacity(gop)             # flat interior -> see-through
+    vol.prop.SetSpecular(0.5)
+    vol.prop.SetSpecularPower(48)
+    vol.mapper.SetBlendModeToComposite()
+    vol.mapper.SetAutoAdjustSampleDistances(1)
+    vol.mapper.SetSampleDistance(float(min(spacing)) * 0.4)
+    actors.append(vol)
+
+    # 2. Translucent shells: a cool foil to the fire -------------------------
+    shells = IsosurfaceActor(dens, spacing=spacing,
+                             iso_values=[0.4 * hi, 0.8 * hi, 1.3 * hi],
+                             colors=[(0.15, 0.85, 0.95), (0.55, 0.95, 1.0),
+                                     (0.9, 1.0, 1.0)],
+                             opacity=0.22)
+    actors.append(shells)
+
+    # 3. Streamlines coloured by speed ---------------------------------------
+    # Advect a fixed set of seeds each frame from the *velocity* field, which is
+    # what carries the curl; colour the tracers by |v|.
+    vec_frames = [tuple(v[i] for i in range(3)) for v in vels]
+    seeds = seed_cloud(dens[0], spacing)
+    actors.append(StreamlineActor(vec_frames, spacing=spacing, seeds=seeds,
+                                  direction="both", max_propagation=60.0,
+                                  initial_step=1.5, color_by_magnitude=True,
+                                  colormap="plasma", line_width=1.6))
+    return actors, hi
+
+
+def seed_cloud(dens0, spacing, n=140):
+    """Seed points scattered through the plume's mass, not on a grid."""
+    rng = np.random.default_rng(7)
+    w = np.clip(dens0, 0, None).ravel()
+    if w.sum() <= 0:
+        w = np.ones_like(w)
+    idx = rng.choice(w.size, size=n, p=w / w.sum())
+    pts = vtk.vtkPoints()
+    for i in idx:
+        ix, iy, iz = np.unravel_index(i, dens0.shape)
+        pts.InsertNextPoint(ix * spacing[0], iy * spacing[1], iz * spacing[2])
+    pd = vtk.vtkPolyData()
+    pd.SetPoints(pts)
+    return pd
+
 
 def main():
-    parser = argparse.ArgumentParser(description="PyViz4D PhiFlow Smoke Demo")
-    parser.add_argument("--res", type=int, default=28, help="Grid resolution (X & Z axis). Y will be 2*res.")
-    parser.add_argument("--frames", type=int, default=200, help="Number of frames to simulate.")
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--res", type=int, default=28,
+                   help="grid resolution in x and z (y is 2x).  28 is a hard "
+                        "ceiling here: PhiFlow's projection builds a sparse "
+                        "normal matrix with n^2 entries, and n = 2*res^3 "
+                        "crosses int32 at 46340 cells")
+    p.add_argument("--frames", type=int, default=140,
+                   help="time steps to integrate and animate")
+    p.add_argument("--buoyancy", type=float, default=0.5)
+    p.add_argument("--frame", type=int, default=110,
+                   help="which time step to draw for the still PNG")
+    p.add_argument("--png", default="docs/smoke4d.png")
+    p.add_argument("--size", nargs=2, type=int, default=[1280, 900])
+    p.add_argument("--interactive", action="store_true",
+                   help="animate in a Viewer4D window instead of writing a PNG")
+    args = p.parse_args()
 
-    densities = simulate_smoke(res=args.res, frames=args.frames)
+    dens, vels = simulate(res=args.res, frames=args.frames,
+                          buoyancy=args.buoyancy)
+    spacing = (100.0 / args.res, 200.0 / (args.res * 2), 100.0 / args.res)
+    actors, _ = build_scene(dens, vels, spacing, args)
 
-    # 1. Initialize the 4D Viewer
-    viewer = Viewer4D(bg_color=(0.1, 0.1, 0.12))
-
-    # Enable Depth Peeling for order-independent transparency (Crucial for Isosurfaces!)
-    viewer.ren.SetUseDepthPeeling(1)
-    viewer.ren.SetOcclusionRatio(0.1)
-    viewer.ren.SetMaximumNumberOfPeels(4)
-    viewer.ren_win.SetAlphaBitPlanes(1)
-    viewer.ren_win.SetMultiSamples(0)
-
-    # 2. Setup the striking transparent IsosurfaceActor
-    cmap = plt.get_cmap('viridis')
-    iso_values = [0.05, 0.3, 0.8, 1.5, 2.5]
-    colors = [cmap(v / 2.5)[:3] for v in iso_values]
-
-    # Spacing mapping: Box size / Resolution
-    # Box is (100, 200, 100), grid is (res, res*2, res)
-    spacing = (100.0/args.res, 200.0/(args.res*2), 100.0/args.res)
-
-    iso_actor = IsosurfaceActor(
-        densities,
-        spacing=spacing,
-        iso_values=iso_values,
-        colors=colors,
-        opacity=0.35 # Glass-like transparency
-    )
-    viewer.add_actor(iso_actor)
-
-    # 3. Add axes/bounding box
-    cube_axes = vtk.vtkCubeAxesActor()
-    cube_axes.SetBounds(0, 100, 0, 200, 0, 100)
-    cube_axes.SetCamera(viewer.ren.GetActiveCamera())
-    cube_axes.SetXTitle("X")
-    cube_axes.SetYTitle("Y")
-    cube_axes.SetZTitle("Z")
-
-    for i in range(3):
-        cube_axes.GetTitleTextProperty(i).SetColor(1, 1, 1)
-        cube_axes.GetLabelTextProperty(i).SetColor(1, 1, 1)
-    cube_axes.GetProperty().SetColor(0.5, 0.5, 0.5)
-
-    viewer.add_actor(cube_axes)
-
-    # 4. Position Camera
-    cam = viewer.ren.GetActiveCamera()
-    cam.SetPosition(250, 100, 300)
-    cam.SetFocalPoint(50, 100, 50)
+    cam = vtk.vtkCamera()
+    cam.SetFocalPoint(50.0, 95.0, 45.0)
+    cam.SetPosition(235.0, -40.0, 175.0)
     cam.SetViewUp(0, 1, 0)
-    viewer.ren.ResetCameraClippingRange()
 
-    # 5. Add UI Controls for Time and Speed
-    viewer.add_playback_ui(max_time=args.frames - 1, loop=True)
+    if args.interactive:
+        viewer = Viewer4D(size=(args.size[0], args.size[1]),
+                          bg_color=(0.015, 0.015, 0.03))
+        viewer.ren.SetUseDepthPeeling(1)
+        viewer.ren.SetOcclusionRatio(0.05)
+        viewer.ren.SetMaximumNumberOfPeels(24)
+        viewer.ren_win.SetAlphaBitPlanes(1)
+        viewer.ren_win.SetMultiSamples(8)
+        for a in actors:
+            viewer.add_actor(a)
+        viewpoint(viewer.ren, cam)
+        viewer.add_playback_ui(max_time=args.frames - 1, loop=True)
+        print("window: left-drag rotate, middle/shift-drag pan, scroll zoom, "
+              "space play/pause, q quit")
+        viewer.start(timer_interval_ms=33)
+        return 0
 
-    print("Launching PyViz4D Viewer...")
-    viewer.start(timer_interval_ms=16)
+    # Offscreen still: advance the actors to the requested time first.
+    t = min(max(args.frame, 0), len(dens) - 1)
+    for a in actors:
+        a.update(float(t))
+    render_to_png([a.actor for a in actors], args.png,
+                  size=(args.size[0], args.size[1]), camera=cam,
+                  bg_color=(0.015, 0.015, 0.03), zoom=2.4)
+    print(f"wrote {args.png} (frame {t}/{args.frames - 1})")
+    return 0
 
-if __name__ == '__main__':
-    main()
+
+if __name__ == "__main__":
+    raise SystemExit(main())
