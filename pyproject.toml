@@ -41,3 +41,8 @@ phiflow = [
 
 [tool.setuptools.packages.find]
 include = ["pyviz4d*"]
+
+[tool.pytest.ini_options]
+# A bare `pytest` used to collect test_phi*.py at the repo root (phiflow
+# scratch scripts, not tests) and die on "No module named 'phi'".
+testpaths = ["tests"]

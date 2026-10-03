@@ -7,7 +7,6 @@ every other test in this file and fails only those.
 """
 
 import hashlib
-import importlib.util
 import os
 
 import numpy as np
@@ -19,14 +18,11 @@ from pyviz4d import (get_color, line_source, line_actor, point_actor,
                      spherical_voxel_actor, render_to_png)
 from pyviz4d.spherical_grid import spherical_grid_actor
 
-# SphericalCT's port of pyvizvtk, the source of truth for connectivity.  Used
-# for a live differential check when the checkout is present.
-SPHERICALCT_PORT = os.path.join(
-    "/Users/butala/src/SphericalCT/src/sphericalct/vis/vtk_primitives.py")
-
 # sha256 of the flattened (int64) cell connectivity for N_theta = N_phi = 10,
-# captured from SphericalCT's vtk_primitives.py at commit 8acd1da.  Embedded so
-# the connectivity oracle survives without that checkout.
+# captured from SphericalCT's vtk_primitives.py at commit 8acd1da.  That port
+# is gone -- SphericalCT now imports spherical_voxel_actor from pyviz4d, so
+# there is no second implementation left to diff against -- and this digest is
+# the connectivity oracle: it is what keeps the cell ordering fixed.
 CELLS_SHA_10x10 = "33eb0d0a2a6cb6fbb9bb28c0fc71afeca4d929d912546fd9161f118b576a4826"
 
 # vtkPoints defaults to float32, so point comparisons carry ~1e-7 relative noise.
@@ -59,14 +55,6 @@ def _cells(actor):
 def _cells_digest(actor):
     return hashlib.sha256(
         np.array(_cells(actor), dtype=np.int64).tobytes()).hexdigest()
-
-
-def _load_sphericalct_port():
-    spec = importlib.util.spec_from_file_location("sc_vtk_primitives",
-                                                  SPHERICALCT_PORT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def _corner_points(actor, n_theta=N_THETA, n_phi=N_PHI):
@@ -385,21 +373,3 @@ def test_viewer_save_screenshot(tmp_path):
     non_background = np.mean(
         np.abs(img.reshape(-1, img.shape[-1]).astype(int) - bg).max(axis=1) > 8)
     assert non_background > 0.01
-
-
-# ---------------------------------------------------- live differential check
-
-@pytest.mark.skipif(not os.path.exists(SPHERICALCT_PORT),
-                    reason="SphericalCT checkout not present")
-def test_matches_sphericalct_port_bitexact():
-    ref = _load_sphericalct_port()
-    cases = [
-        (1.0, 2.0, np.radians(8), np.radians(15), np.radians(0), np.radians(45)),
-        (1.0, 2.0, np.radians(8), np.radians(15), np.radians(30), np.radians(75)),
-        (2.0, 5.0, np.radians(-20), np.radians(40), np.radians(-100), np.radians(30)),
-    ]
-    for args in cases:
-        mine = spherical_voxel_actor(*args)
-        theirs = ref.spherical_voxel_actor(*args)
-        assert np.array_equal(_points(mine), _points(theirs))
-        assert _cells(mine) == _cells(theirs)
