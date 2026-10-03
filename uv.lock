@@ -2491,6 +2491,8 @@ all = [
     { name = "pyproj", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "requests", version = "2.32.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 dev = [
     { name = "imageio", version = "2.37.2", source = { registry = "https://pypi.org/simple" }, extra = ["ffmpeg"], marker = "python_full_version < '3.10'" },
@@ -2501,24 +2503,27 @@ dev = [
     { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "requests", version = "2.32.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 earth = [
     { name = "pooch" },
 ]
 geo = [
+    { name = "imageio", version = "2.37.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "imageio", version = "2.37.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pooch" },
     { name = "pyproj", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "requests", version = "2.32.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 phiflow = [
     { name = "jax", version = "0.4.30", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "jax", version = "0.10.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "jax", version = "0.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
-    { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "phiflow" },
     { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
@@ -2535,13 +2540,13 @@ video = [
 requires-dist = [
     { name = "imageio", marker = "extra == 'all'" },
     { name = "imageio", marker = "extra == 'dev'" },
+    { name = "imageio", marker = "extra == 'geo'" },
     { name = "imageio", marker = "extra == 'video'" },
     { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'all'" },
     { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'dev'" },
     { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'video'" },
     { name = "jax", marker = "extra == 'phiflow'" },
     { name = "matplotlib" },
-    { name = "matplotlib", marker = "extra == 'phiflow'" },
     { name = "numpy" },
     { name = "phiflow", marker = "extra == 'phiflow'" },
     { name = "pooch", marker = "extra == 'all'" },
@@ -2552,6 +2557,9 @@ requires-dist = [
     { name = "pyproj", marker = "extra == 'dev'" },
     { name = "pyproj", marker = "extra == 'geo'" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "requests", marker = "extra == 'all'" },
+    { name = "requests", marker = "extra == 'dev'" },
+    { name = "requests", marker = "extra == 'geo'" },
     { name = "scipy", marker = "extra == 'phiflow'" },
     { name = "tqdm", marker = "extra == 'phiflow'" },
     { name = "vtk" },

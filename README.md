@@ -20,10 +20,10 @@ imported lazily and therefore lives behind extras. Ask for only what you use:
 | Extra | Pulls in | Unlocks |
 | --- | --- | --- |
 | `earth` | `pooch` | `pyviz4d.earth` (textures, `WGS84`) and `EarthViewer4D` |
-| `geo` | `pooch`, `pyproj` | `read_cityjson()`, `examples/demo_cityjson.py` |
+| `geo` | `pooch`, `pyproj`, `requests`, `imageio` | `read_cityjson()`, `examples/demo_cityjson.py`, the `demo_lod1_*` generators |
 | `video` | `imageio`, `imageio[ffmpeg]` | `Viewer4D.enable_recording()` — `frames_dir` needs plain `imageio`, `video_path` needs ffmpeg |
 | `all` | all four leaves | everything except the PhiFlow demo |
-| `phiflow` | `phiflow`, `scipy`, `tqdm`, `matplotlib`, `jax` | `examples/demo_phiflow.py` |
+| `phiflow` | `phiflow`, `scipy`, `tqdm`, `jax` | `examples/demo_phiflow.py` |
 | `dev` | `pytest` + the four leaves | running `tests/` |
 
 ```bash
@@ -89,10 +89,6 @@ this codebase is written to avoid.
 ```bash
 uv sync --extra all          # once; or --extra dev for the test suite
 ```
-
-The examples that fetch OpenStreetMap data additionally need `requests`, which
-only arrives with an extra — pass `--extra geo` (or `--extra all`) on the
-command line, or run them through `.venv/bin/python` after syncing an extra.
 
 | Example | What it shows |
 | --- | --- |
@@ -175,7 +171,7 @@ place, pull OSM footprints and extrude them; `demo_lod1_uiuc.py` instead reads
 the pre-extruded solids that Open City Model publishes.
 
 ```bash
-# --extra geo is required: these scripts use `requests`, which arrives with pooch
+# `--extra geo` carries requests and imageio, which the generators fetch with
 uv run --extra geo python examples/demo_lod1_pudong.py   # Lujiazui, Shanghai (real 632 m heights)
 uv run --extra geo python examples/demo_lod1_lian.py     # Li'an Education Zone, Hainan
 uv run --extra geo python examples/demo_lod1_glasgow.py  # James Watt Building, Glasgow
@@ -219,14 +215,25 @@ USBuildingFootprints.
 
 ```bash
 uv sync --extra dev
-uv run pytest tests/ -q
+uv run pytest -q
 ```
 
-One test cross-checks the ported primitives against SphericalCT's reference
-implementation and skips itself when that checkout is not present on the machine.
+`testpaths` is set to `tests/`, so a bare `pytest` from the repo root is safe.
+What pins the ported primitives is an embedded sha256 of the spherical voxel
+cell connectivity (`CELLS_SHA_10x10`), plus two convention tests that fail only
+if `theta` stops being latitude.
 
 ## Data
 
 No third-party datasets are redistributed here. The LoD1 examples fetch
 OpenStreetMap data at runtime; the PlumeViz examples expect COVIS contest data
 to be present locally.
+
+## License
+
+MIT — see [LICENSE](LICENSE), the same terms as `pyvizvtk` and `SphericalCT`.
+
+That covers the code, not what it renders. Building footprints and heights come
+from OpenStreetMap / Open City Model and are &copy; their sources under
+[ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/); the Earth texture is
+NASA Blue Marble. Models and images the examples write inherit those terms.

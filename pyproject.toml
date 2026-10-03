@@ -7,8 +7,9 @@ name = "pyviz4d"
 version = "0.1.0"
 description = "4-D scientific spatio-temporal data visualization based on pure VTK"
 authors = [
-    { name = "Author Name", email = "author@example.com" }
+    { name = "Mark Butala", email = "mark.butala@glasgow.ac.uk" }
 ]
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -17,27 +18,24 @@ dependencies = [
     "matplotlib"
 ]
 
+[project.urls]
+Homepage = "https://github.com/butala/pyviz4d"
+Repository = "https://github.com/butala/pyviz4d"
+Issues = "https://github.com/butala/pyviz4d/issues"
+
 [project.optional-dependencies]
-# core imports only: the four leaves below are imported lazily, so they are
-# extras rather than hard requirements. See README "Optional extras".
+# The leaves below are imported lazily, so they are extras rather than hard
+# requirements.  See README "Optional extras".
 earth = ["pooch"]                       # blue_marble.fetch (EarthViewer4D / earth_actor)
-geo = ["pooch", "pyproj"]               # cityjson.read_cityjson + examples/demo_cityjson.py
-video = ["imageio", "imageio[ffmpeg]"]  # Viewer4D.enable_recording (frames_dir and/or video_path)
-all = ["pooch", "pyproj", "imageio", "imageio[ffmpeg]"]
-dev = [
-    "pytest",
-    "pooch",
-    "pyproj",
-    "imageio",
-    "imageio[ffmpeg]"
-]
-phiflow = [
-    "phiflow",
-    "scipy",
-    "tqdm",
-    "matplotlib",
-    "jax"
-]
+# cityjson.read_cityjson (pyproj) and the demo_lod1_* generators, which fetch
+# over HTTP (requests) and check their PNGs (imageio).  requests used to arrive
+# only transitively via pooch, which is why the README had to apologise for it.
+geo = ["pooch", "pyproj", "requests", "imageio"]
+video = ["imageio", "imageio[ffmpeg]"]  # Viewer4D.enable_recording (video_path)
+all = ["pooch", "pyproj", "requests", "imageio", "imageio[ffmpeg]"]
+# PEP 621 extras cannot include one another, so this repeats `all` + pytest.
+dev = ["pytest", "pooch", "pyproj", "requests", "imageio", "imageio[ffmpeg]"]
+phiflow = ["phiflow", "scipy", "tqdm", "jax"]   # matplotlib is a core dep
 
 [tool.setuptools.packages.find]
 include = ["pyviz4d*"]
