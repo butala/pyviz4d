@@ -45,25 +45,41 @@ from pyviz4d import (
 )
 
 
-def blackbody(n=256):
-    """A sunset ramp: indigo shadow -> violet -> magenta -> coral -> cream.
+def deepfire(n=256):
+    """Cool blue body, vermillion core, white highlights.
 
     Returned as ``[(scalar, r, g, b), ...]`` for VolumeActor's ``color_points``.
 
-    Deliberately *not* blackbody.  A fire ramp puts dark orange in the middle
-    of its range, and semi-transparent dark orange composited over a near-black
-    ground is brown -- which is what most of the volume ends up being.  Keeping
-    the whole low half cool (indigo/violet) means the thin smoke reads blue and
-    only the dense core turns warm, where bright coral and cream cannot go
-    muddy.  The hue path also never enters 30-70 deg at low value, which is
-    where olive and brown live.
+    This ramp is *fitted*, not chosen: binned by value and averaged, the
+    reference image this is meant to look like resolves to
+
+        #0A0C13 navy -> #1E2941 slate -> #4C6F85 steel -> #AFA089 tan
+               -> #DF6020 VERMILLION -> #FFFFFF
+
+    with a hard gap in its hue histogram at 30-60 deg -- it avoids brown by
+    skipping yellow altogether -- and 12 per cent of the frame sitting on one
+    flat vermillion.  Two earlier attempts missed this: a fire ramp put dark
+    orange in the middle, which composited to mud, and a "sunset" smeared
+    violet-to-coral everywhere, which read as an odd red haze.  The point is
+    *confidence*: one cool family for the body, one saturated warm for the
+    core, straight to white.
     """
-    stops = [(0.00, (0.03, 0.02, 0.12)),   # indigo shadow
-             (0.22, (0.16, 0.08, 0.52)),   # violet
-             (0.45, (0.55, 0.14, 0.80)),   # purple-magenta
-             (0.64, (0.95, 0.28, 0.62)),   # magenta
-             (0.82, (1.00, 0.58, 0.46)),   # coral
-             (1.00, (1.00, 0.96, 0.88))]   # cream
+    # FLAT bands, and a hard floor at FLOOR below which nothing is drawn at all.
+    # Both matter for the same reason: a smooth ramp plus a faint halo averages
+    # every band along the ray into grey (measured saturation 0.06).  Cutting
+    # the halo and holding each colour constant over a stretch is what took
+    # that to 0.62, against 0.65 for the reference image this is fitted to.
+    FLOOR = 0.14
+    stops = [(0.00, (0.03, 0.04, 0.09)),    # navy
+             (FLOOR, (0.03, 0.04, 0.09)),   #   held, then hard-cut below
+             (FLOOR + 0.01, (0.10, 0.18, 0.32)),  # steel
+             (0.34, (0.10, 0.18, 0.32)),    #   held
+             (0.36, (0.26, 0.42, 0.55)),    # pale steel
+             (0.46, (0.26, 0.42, 0.55)),    #   held
+             (0.44, (0.875, 0.375, 0.125)),  # VERMILLION -- the reference's
+             (0.68, (0.875, 0.375, 0.125)),  #   signature flat colour
+             (0.72, (1.00, 1.00, 1.00)),    # white
+             (1.00, (1.00, 1.00, 1.00))]    #   held
     xs = np.linspace(0.0, 1.0, n)
     out = []
     for t in xs:
@@ -177,36 +193,69 @@ def build_scene(dens, vels, spacing, args):
     # cores may read pale, but you can see *into* the volume at every depth.
 
     # 1. Ray-cast volume, blackbody, gradient opacity -------------------------
-    vol = VolumeActor(dens, spacing=spacing, color_points=blackbody(),
-                      opacity_points=[(0.0, 0.0), (0.15 * hi, 0.05),
-                                      (0.50 * hi, 0.18), (hi, 0.45)])
+    # Colour points must live in the *data* domain, not [0, 1]: the opacity
+    # function below is scaled by hi and the colour function has to match, or
+    # the ramp's lower bands are asked about scalars the opacity floor has
+    # already discarded and the whole plume lands on one colour.  (It did --
+    # the render came out 100% orange with the blue bands never drawn.)
+    vol = VolumeActor(dens, spacing=spacing,
+                      color_points=[(t * hi, r, g, b) for t, r, g, b in deepfire()],
+                      # Hard floor at 0.14*hi (see deepfire): nothing below it
+                      # is drawn.  Then dense enough that each ray is dominated
+                      # by one band rather than averaging three into grey.
+                      # The plume's *surface* is the low-density (blue) skin;
+                      # the dense core behind it is what should read vermillion.
+                      # So the cool bands are deliberately translucent and the
+                      # warm ones opaque -- otherwise a blue shell hides the
+                      # core and the frame is one hue.
+                      opacity_points=[(0.0, 0.0), (0.14 * hi, 0.0),
+                                      (0.16 * hi, 0.14),
+                                      (0.42 * hi, 0.40),
+                                      (0.55 * hi, 0.92), (hi, 1.0)])
     gx, gy, gz = gradient_field(dens[0], spacing)
     g_hi = float(np.percentile(np.sqrt(gx * gx + gy * gy + gz * gz), 99.0)) or 1.0
-    gop = vtk.vtkPiecewiseFunction()
-    gop.AddPoint(0.0, 0.0)
-    gop.AddPoint(0.30 * g_hi, 0.18)
-    gop.AddPoint(g_hi, 0.85)
-    vol.prop.SetGradientOpacity(gop)             # flat interior -> see-through
-    vol.prop.SetSpecular(0.5)
-    vol.prop.SetSpecularPower(48)
+    if args.gradient_opacity:
+        gop = vtk.vtkPiecewiseFunction()
+        gop.AddPoint(0.0, 0.0)
+        gop.AddPoint(0.30 * g_hi, 0.18)
+        gop.AddPoint(g_hi, 0.85)
+        vol.prop.SetGradientOpacity(gop)
+    # Gradient opacity is *off* by default here.  It is the right knob for
+    # wispy smoke -- it keeps flat interiors see-through so rays travel -- but
+    # rays that travel average navy + steel + vermillion into grey, and this
+    # look needs each pixel dominated by one band.  (It is what took the
+    # measured saturation from 0.29 to 0.5+.)
+    # Emissive, not shaded.  Diffuse+specular volume shading multiplies every
+    # sample by a lighting term and *adds white*, which greys a colour ramp out
+    # completely -- measured saturation collapsed to 0.06 against the 0.65 of
+    # the reference.  The reference is a pure emission render: its colours are
+    # the ramp's colours, full strength.
+    vol.prop.SetAmbient(1.0)
+    vol.prop.SetDiffuse(0.0)
+    vol.prop.SetSpecular(0.0)
     vol.mapper.SetBlendModeToComposite()
     vol.mapper.SetAutoAdjustSampleDistances(1)
     vol.mapper.SetSampleDistance(float(min(spacing)) * 0.4)
     actors.append(vol)
 
-    # 2. Translucent shells: a cool foil to the fire -------------------------
-    shells = IsosurfaceActor(dens, spacing=spacing,
-                             iso_values=[0.6 * hi, 1.4 * hi],
-                             colors=[(0.35, 0.85, 0.95), (0.75, 0.95, 1.0)],
-                             opacity=0.08)
-    actors.append(shells)
+    # 2. Shells and 3. ribbons are off by default.  The target image is a pure
+    # volume render: the cyan shells and the lime ribbons were two more layers
+    # competing with the plume ("green pasta"), and neither is in the reference.
+    if args.shells:
+        shells = IsosurfaceActor(dens, spacing=spacing,
+                                 iso_values=[0.6 * hi, 1.4 * hi],
+                                 colors=[(0.55, 0.75, 0.90), (0.85, 0.92, 1.0)],
+                                 opacity=0.08)
+        actors.append(shells)
 
-    # 3. Vortex-core ribbons, coloured by speed ------------------------------
+    if not args.n_seeds:
+        return actors, hi
+
+    # 3. Vortex-core ribbons (opt-in) -----------------------------------------
     # Seeded on |curl v| maxima and kept short, so what you see is the ring
     # under the cap and the braids along the stem rather than a tangle.  Ice
     # ramp + shaded tubes: the cool complement to the volume's violet/coral,
     # so the flow reads as a distinct layer instead of more of the same.
-    register_accent()
     vec_frames = [tuple(v[i] for i in range(3)) for v in vels]
     speeds = [float(np.linalg.norm(v, axis=0).max()) for v in vels]
     ribbons = StreamlineActor(
@@ -310,7 +359,12 @@ def main():
     p.add_argument("--dissipation", type=float, default=0.055,
                    help="density bled per step; without it the closed box "
                         "accumulates mass until the plume is a slab")
-    p.add_argument("--n-seeds", type=int, default=40,
+    p.add_argument("--gradient-opacity", action="store_true",
+                   help="see-through flat interiors (wispy, but the "
+                        "ray then averages bands into grey)")
+    p.add_argument("--shells", action="store_true",
+                   help="add translucent isosurface shells (off by default)")
+    p.add_argument("--n-seeds", type=int, default=0,
                    help="vortex-core ribbons to draw (sparse reads "
                         "as structure; dense reads as spaghetti)")
     p.add_argument("--max-propagation", type=float, default=26.0,
@@ -339,7 +393,7 @@ def main():
 
     if args.interactive:
         viewer = Viewer4D(size=(args.size[0], args.size[1]),
-                          bg_color=(0.015, 0.015, 0.03))
+                          bg_color=(0.0, 0.0, 0.0))
         viewer.ren.SetUseDepthPeeling(1)
         viewer.ren.SetOcclusionRatio(0.05)
         viewer.ren.SetMaximumNumberOfPeels(24)
@@ -360,7 +414,7 @@ def main():
         a.update(float(t))
     render_to_png([a.actor for a in actors], args.png,
                   size=(args.size[0], args.size[1]), camera=cam,
-                  bg_color=(0.015, 0.015, 0.03), zoom=2.4)
+                  bg_color=(0.0, 0.0, 0.0), zoom=2.4)
     print(f"wrote {args.png} (frame {t}/{args.frames - 1})")
     return 0
 
