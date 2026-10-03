@@ -233,9 +233,6 @@ def build_scene(dens, vels, spacing, args):
     vol.prop.SetAmbient(1.0)
     vol.prop.SetDiffuse(0.0)
     vol.prop.SetSpecular(0.0)
-    vol.mapper.SetBlendModeToComposite()
-    vol.mapper.SetAutoAdjustSampleDistances(1)
-    vol.mapper.SetSampleDistance(float(min(spacing)) * 0.4)
     actors.append(vol)
 
     # 2. Shells and 3. ribbons are off by default.  The target image is a pure

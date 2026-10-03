@@ -182,3 +182,19 @@ def test_line_source_requires_alpha_with_color():
 def test_power_opacity_ramps_to_max():
     pwf = power_opacity(0.0, 1.0, power=2.0, max_opacity=0.9)
     assert pwf.GetSize() >= 2
+
+
+def test_volume_mapper_is_pinned_so_camera_moves_do_not_strobe():
+    """vtkSmartVolumeMapper adapts by default; then panning strobes the colour.
+
+    Three things have to be fixed or the composite changes under the cursor:
+    the sample distance, its *interactive* adjuster (a separate flag, and the
+    one that fires exactly when you pan), and the render mode -- the default
+    lets the mapper swap between back ends as it judges.
+    """
+    a = VolumeActor([np.ones((8, 8, 8), dtype=np.float32)], spacing=(1.0, 2.0, 4.0))
+    m = a.mapper
+    assert m.GetAutoAdjustSampleDistances() == 0
+    assert m.GetInteractiveAdjustSampleDistances() == 0
+    assert m.GetSampleDistance() == pytest.approx(0.5)   # 0.5 * min(spacing)
+    assert m.GetRequestedRenderMode() != 0                # 0 == Default, i.e. adaptive

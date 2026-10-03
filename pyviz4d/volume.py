@@ -144,7 +144,8 @@ class VolumeActor(TemporalActor):
     Supports a list of 3D numpy arrays, mapping them dynamically over time.
     """
     def __init__(self, frames_density: list, spacing=(1.0, 1.0, 1.0),
-                 origin=(0.0, 0.0, 0.0), color_points=None, opacity_points=None):
+                 origin=(0.0, 0.0, 0.0), color_points=None, opacity_points=None,
+                 sample_distance=None):
         self.frames_density = frames_density
         self.spacing = spacing
         self.origin = origin
@@ -155,6 +156,24 @@ class VolumeActor(TemporalActor):
         self.mapper = vtk.vtkSmartVolumeMapper()
         self.mapper.SetInputData(self.image)
         self.mapper.SetBlendModeToComposite()
+
+        # Sampling and render mode are pinned, and neither is allowed to adapt.
+        # vtkSmartVolumeMapper defaults to *adapting*: it drops its sample
+        # distance to hold frame rate (InteractiveAdjustSampleDistances), and
+        # SetRequestedRenderModeToDefault may also swap between the GPU and
+        # ray-cast back ends as it judges.  Both change the composite -- so a
+        # volume strobes in colour while you pan, and never matches the still.
+        # One algorithm, one sample distance, moving or not.
+        self.mapper.SetAutoAdjustSampleDistances(0)
+        self.mapper.SetInteractiveAdjustSampleDistances(0)
+        # GPU, not Default and not RayCast: Default lets the mapper switch
+        # back ends mid-interaction, and RayCast is a *different* algorithm
+        # which composites noticeably darker -- pinning to it changed the look
+        # of the render outright.  GPU is what Default was picking anyway.
+        self.mapper.SetRequestedRenderModeToGPU()
+        if sample_distance is None:
+            sample_distance = 0.5 * min(spacing)
+        self.mapper.SetSampleDistance(float(sample_distance))
 
         self.prop = vtk.vtkVolumeProperty()
         self.prop.ShadeOn()

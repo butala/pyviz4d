@@ -114,7 +114,8 @@ def main():
           f"p50 {np.median(vol):.0f} p99 {np.percentile(vol, 99):.0f}")
 
     actor = VolumeActor([vol], spacing=(1.0, 1.0, 1.0),
-                        color_points=spec["color"], opacity_points=spec["opacity"])
+                        color_points=spec["color"], opacity_points=spec["opacity"],
+                        sample_distance=0.4)
     # Part-lit, not emissive.  Emissive was right for the smoke plume (shading
     # a *gradient* greys it out) but these are solid tubes and shells: without
     # a lighting term they read as flat ribbons.  Ambient carries the colour,
@@ -124,9 +125,6 @@ def main():
     actor.prop.SetDiffuse(0.55)
     actor.prop.SetSpecular(0.40)
     actor.prop.SetSpecularPower(42)
-    actor.mapper.SetBlendModeToComposite()
-    actor.mapper.SetAutoAdjustSampleDistances(1)
-    actor.mapper.SetSampleDistance(0.4)
 
     cam = vtk.vtkCamera()
     cam.SetFocalPoint(128, 128, 128)
