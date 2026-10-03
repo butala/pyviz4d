@@ -200,29 +200,90 @@ def build_scene(dens, vels, spacing, args):
                              opacity=0.08)
     actors.append(shells)
 
-    # 3. Streamlines coloured by speed ---------------------------------------
-    # Advect a fixed set of seeds each frame from the *velocity* field, which is
-    # what carries the curl; colour the tracers by |v|.
+    # 3. Vortex-core ribbons, coloured by speed ------------------------------
+    # Seeded on |curl v| maxima and kept short, so what you see is the ring
+    # under the cap and the braids along the stem rather than a tangle.  Ice
+    # ramp + shaded tubes: the cool complement to the volume's violet/coral,
+    # so the flow reads as a distinct layer instead of more of the same.
+    register_accent()
     vec_frames = [tuple(v[i] for i in range(3)) for v in vels]
-    seeds = seed_cloud(dens[0], spacing)
-    actors.append(StreamlineActor(vec_frames, spacing=spacing, seeds=seeds,
-                                  direction="both", max_propagation=60.0,
-                                  initial_step=1.5, color_by_magnitude=True,
-                                  colormap="plasma", line_width=1.6))
+    speeds = [float(np.linalg.norm(v, axis=0).max()) for v in vels]
+    ribbons = StreamlineActor(
+        vec_frames, spacing=spacing,
+        seeds=vortex_seeds(vels[len(vels) // 2], spacing, n=args.n_seeds),
+        direction="forward", max_propagation=args.max_propagation,
+        initial_step=1.0, color_by_magnitude=True, colormap="smoke_lime",
+        magnitude_range=(0.0, float(np.percentile(speeds, 90)) or 1.0),
+        tube_radius=args.tube_radius, line_width=1.0)
+    # Self-lit, like an overlay: a shaded tube is a diffuse surface and sinks
+    # straight into the volume in front of it.  This is an annotation of the
+    # flow, so it should read as one.
+    rp = ribbons.actor.GetProperty()
+    rp.SetAmbient(1.0)
+    rp.SetDiffuse(0.15)
+    rp.SetSpecular(0.25)
+    actors.append(ribbons)
     return actors, hi
 
 
-def seed_cloud(dens0, spacing, n=140):
-    """Seed points scattered through the plume's mass, not on a grid."""
-    rng = np.random.default_rng(7)
-    w = np.clip(dens0, 0, None).ravel()
-    if w.sum() <= 0:
-        w = np.ones_like(w)
-    idx = rng.choice(w.size, size=n, p=w / w.sum())
+def register_accent():
+    """A lime accent ramp -- deep green -> green -> spring -> pale lime.
+
+    Registered so volume.matplotlib_ctf can sample it by name.  The volume is
+    a sunset (indigo -> violet -> magenta -> coral -> cream) and its thin end
+    is violet, i.e. *blue-dominant* -- so both `plasma` and a cyan accent sit
+    on the same hue as the smoke and disappear into it.  Green is the one hue
+    the scene does not use, so the flow reads as a distinct layer.  (This is
+    the same reason the paper's figures put a green centreline in a gold
+    plume.)
+    """
+    import matplotlib
+    from matplotlib.colors import LinearSegmentedColormap
+    if "smoke_lime" not in matplotlib.colormaps():
+        matplotlib.colormaps.register(LinearSegmentedColormap.from_list("smoke_lime", [
+            # The floor is a *visible* green, not near-black: a ramp that
+            # starts dark makes every slow segment of every ribbon vanish, and
+            # in a plume most of the length is slow -- which is the other half
+            # of "the streamlines are not adding a whole lot".
+            (0.00, (0.10, 0.38, 0.12)),
+            (0.35, (0.28, 0.75, 0.16)),
+            (0.70, (0.62, 0.98, 0.30)),
+            (1.00, (0.95, 1.00, 0.85)),
+        ]))
+
+
+def vorticity(v):
+    """|curl v| for a (3, nx, ny, nz) velocity array on a regular grid."""
+    vx, vy, vz = (np.asarray(v[i], dtype=np.float32) for i in range(3))
+    wx = np.gradient(vz, axis=1) - np.gradient(vy, axis=2)
+    wy = np.gradient(vx, axis=2) - np.gradient(vz, axis=0)
+    wz = np.gradient(vy, axis=0) - np.gradient(vx, axis=1)
+    return np.sqrt(wx * wx + wy * wy + wz * wz)
+
+
+def vortex_seeds(v, spacing, n=32, min_sep=4):
+    """Seeds placed on the vortex cores, not scattered through the smoke.
+
+    Random seeding through the density mass puts a line in every wisp, which
+    is what spaghetti is.  The structures worth drawing in a plume are the
+    vortex cores -- the ring under the cap and the braids along the stem --
+    and those are the maxima of |curl v|.  Take the strongest of those, with a
+    minimum separation so 32 seeds do not all sit in one knot.
+    """
+    w = vorticity(v)
+    order = np.argsort(w.ravel())[::-1]
     pts = vtk.vtkPoints()
-    for i in idx:
-        ix, iy, iz = np.unravel_index(i, dens0.shape)
-        pts.InsertNextPoint(ix * spacing[0], iy * spacing[1], iz * spacing[2])
+    taken = np.zeros(w.shape, dtype=bool)
+    for idx in order:
+        if pts.GetNumberOfPoints() >= n:
+            break
+        i, j, k = np.unravel_index(idx, w.shape)
+        if taken[max(0, i - min_sep):i + min_sep,
+                 max(0, j - min_sep):j + min_sep,
+                 max(0, k - min_sep):k + min_sep].any():
+            continue
+        taken[i, j, k] = True
+        pts.InsertNextPoint(i * spacing[0], j * spacing[1], k * spacing[2])
     pd = vtk.vtkPolyData()
     pd.SetPoints(pts)
     return pd
@@ -248,6 +309,14 @@ def main():
     p.add_argument("--dissipation", type=float, default=0.055,
                    help="density bled per step; without it the closed box "
                         "accumulates mass until the plume is a slab")
+    p.add_argument("--n-seeds", type=int, default=40,
+                   help="vortex-core ribbons to draw (sparse reads "
+                        "as structure; dense reads as spaghetti)")
+    p.add_argument("--max-propagation", type=float, default=26.0,
+                   help="ribbon length; short traces the vortex, "
+                        "long crosses the box and tangles")
+    p.add_argument("--tube-radius", type=float, default=0.9,
+                   help="0 draws flat lines instead of shaded tubes")
     p.add_argument("--frame", type=int, default=110,
                    help="which time step to draw for the still PNG")
     p.add_argument("--png", default="docs/smoke4d.png")

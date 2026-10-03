@@ -152,8 +152,15 @@ volume rather than as geometry:
   Keeping the whole low half cool means the thin smoke reads violet and only
   the dense core turns warm.
 * **translucent isosurface shells** in electric cyan, a cool foil to the fire.
-* **streamlines** through the velocity field coloured by speed, so the vortices
-  that give the plume its curl are visible rather than implied.
+* **vortex-core ribbons** through the velocity field. These are seeded on the
+  maxima of |curl v| -- the ring under the cap and the braids along the stem,
+  which are the structures worth drawing -- and kept short, rather than 140
+  random lines through the smoke, which is what spaghetti is. Drawn as
+  self-lit shaded tubes on a **lime** ramp: the volume is a sunset whose thin
+  end is violet, so both `plasma` and a cyan accent land on the same hue as the
+  smoke and vanish into it, where green is the one hue the scene does not use.
+  `--n-seeds`, `--max-propagation` and `--tube-radius` trade a sparse reading
+  for a dense one.
 
 `--interactive` animates it in a `Viewer4D` window (space to pause, time slider
 to scrub); without it you get an offscreen still of any `--frame`. The grid

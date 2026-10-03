@@ -329,7 +329,12 @@ class StreamlineActor(TemporalActor):
 
     def _build_pipeline(self, colormap):
         input_port = self.tracer.GetOutputPort()
-        if self.tube_radius > 0.0 and not self.color_by_magnitude:
+        if self.tube_radius > 0.0:
+            # Tubes first, then the magnitude calculator on the tube's output,
+            # so shaded tubes can be coloured by speed.  This used to be
+            # mutually exclusive with color_by_magnitude for no reason -- the
+            # two compose fine, and flat 1.5 px lines coloured by a ramp whose
+            # dark end matches the scene read as spaghetti.
             tube = vtk.vtkTubeFilter()
             tube.SetInputConnection(self.tracer.GetOutputPort())
             tube.SetRadius(self.tube_radius)
