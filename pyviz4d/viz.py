@@ -3,18 +3,42 @@ from typing import List
 from .earth import WGS84, earth_actor
 
 class TemporalActor:
-    """Base class for objects that evolve over time."""
+    """Base class for objects that evolve over time.
+
+    A subclass sets ``self.actor`` -- the ``vtkProp`` a scene adds -- and
+    implements :meth:`update`, which is called once per frame with the current
+    time.  ``self.actor`` defaults to ``None`` so a subclass that forgets is
+    visible at the call site rather than as an AttributeError deep inside
+    ``Viewer4D.add_actor``.
+    """
+    actor = None
+
     def __init__(self, actor: vtk.vtkActor):
         self.actor = actor
 
     def update(self, current_time: float):
-        pass
+        raise NotImplementedError
 
 import numpy as np
 
 class Viewer4D:
     """
     4D Viewer mapping VTK to a time-series animation loop seamlessly.
+
+    Keys (anything else is free for a caller's own observers -- see
+    ``iren.AddObserver("KeyPressEvent", ...)``, and bind at a priority below
+    1.0 so these win):
+
+    * ``q``   quit (VTK's own default)
+    * ``f``   toggle fullscreen (registered in :meth:`start`)
+    * ``r``   reset the camera to the view :meth:`start` latched (which is
+      VTK's default camera unless :func:`pyviz4d.viewpoint` was used first)
+    * ``space`` play/pause, only after :meth:`add_playback_ui`
+
+    The camera is *never* fitted: a fresh viewer opens at VTK's default
+    position, 1 m above the origin looking down -z.  Call
+    :func:`pyviz4d.viewpoint` on ``self.ren`` before :meth:`start` to match an
+    offscreen :func:`pyviz4d.render_to_png` view.
     """
     def __init__(self, size=(1200, 900), bg_color=(0.15, 0.15, 0.15), nrows=1, ncols=1):
         self.nrows = nrows
