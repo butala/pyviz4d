@@ -131,6 +131,24 @@ uv run --extra geo python examples/demo_lod1_pudong.py               # OSM -> Lo
 `sim_output/`, and the two PlumeViz demos expect the COVIS contest frames under
 `data/covis` (override with `--data-dir`).
 
+### Open scientific volumes
+
+`examples/demo_open_volume.py` renders three iconic scans from
+[klacansky.com/open-scivis-datasets](http://klacansky.com/open-scivis-datasets/)
+(public domain, 17 MB each, cached under `data/volumes/`):
+
+```bash
+uv run --extra geo python examples/demo_open_volume.py --dataset aneurism
+uv run --extra geo python examples/demo_open_volume.py --dataset foot --interactive
+```
+
+![C-arm angiogram of the arteries of a head -- contrast-filled vessels and an aneurism, rendered as a tree of copper and gold on black](docs/volume_aneurism.png)
+
+`aneurism` is the one above: a rotational C-arm angiogram of the arteries of a
+head, contrast agent in the blood and an aneurism present. `foot` is a C-arm
+scan of a human foot with tissue *and* bone — the textbook two-material case —
+and `bonsai` is a microCT of a bonsai tree.
+
 ### A 4-D simulation: buoyant smoke plume
 
 `examples/demo_phiflow.py` is a real simulation rather than a canned dataset.
