@@ -6,33 +6,41 @@
 
 Writes a CityJSON LoD1 model, an offscreen PNG, and prints the tallest
 buildings.  Heights are real where OSM has them (`height`), else
-`building:levels` x 3 m, else a per-type default.  WGS84 throughout;
-local ENU metres for geometry.
+`building:levels` x 3 m, else a per-city default table.  WGS84 throughout;
+local ENU metres for geometry.  The shared extrusion / CityJSON / render
+machinery is in ``_lod1.py``; what is local to Lujiazui is the bbox, the
+height table and the framing of the supertall cluster.
 """
 import argparse
-import json
 import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 import requests
-import vtk
 from matplotlib import colormaps
 from matplotlib.colors import LogNorm
+
+from _lod1 import (Building, LEVEL_M, ccw, clean, enu, height_of, lod1_scene,
+                   n_boundary_edges, oblique_camera, png_stats, viewpoint,
+                   write_cityjson)
 
 HERE = Path(__file__).resolve().parents[1] / "data" / "pudong"
 HERE.mkdir(parents=True, exist_ok=True)
 # Lujiazui: Bund bend to Century Ave, Oriental Pearl through Shanghai Tower
 BBOX = (121.4920, 31.2280, 121.5160, 31.2450)          # lon0, lat0, lon1, lat1
 UA = {"User-Agent": "pyviz4d-pudong/0.1 (research)"}
-M_PER_DEG_LAT = 110574.0
-LEVEL_M = 3.0
+
+# Floor counts by building type for tags OSM leaves without a height.  A
+# Pudong block is not a Hainan campus, so this table is per city.
 DEFAULT_LEVELS = {"yes": 3, "house": 2, "residential": 6, "apartments": 8,
                   "dormitory": 5, "school": 3, "university": 4, "college": 4,
                   "commercial": 4, "retail": 2, "hotel": 10, "hospital": 5,
                   "industrial": 2, "warehouse": 2, "construction": 4,
                   "office": 8, "civic": 4, "public": 4}
+# Shanghai has supertalls; a 700 m ceiling drops typos without clipping them.
+HEIGHT_RANGE = (2.0, 700.0)
+LEVELS_RANGE = (0.5, 200.0)
 
 
 def fetch():
@@ -45,67 +53,6 @@ def fetch():
     r.raise_for_status()
     cache.write_text(r.text)
     return r.text
-
-
-def height_of(tags):
-    h = tags.get("height")
-    if h:
-        try:
-            v = float(str(h).split()[0].replace("m", ""))
-            if 2.0 <= v <= 700.0:
-                return v, "height"
-        except ValueError:
-            pass
-    lv = tags.get("building:levels")
-    if lv:
-        try:
-            v = float(str(lv).split(";")[0])
-            if 0.5 <= v <= 200.0:
-                return v * LEVEL_M, "levels"
-        except ValueError:
-            pass
-    bt = tags.get("building", "yes")
-    return DEFAULT_LEVELS.get(bt, 3) * LEVEL_M, "default:" + bt
-
-
-def clean(p):
-    if len(p) > 1 and np.allclose(p[0], p[-1]):
-        p = p[:-1]
-    keep = np.r_[True, (np.abs(np.diff(p, axis=0)).sum(1) > 1e-9)]
-    p = p[keep]
-    if len(p) > 1 and np.allclose(p[0], p[-1]):
-        p = p[:-1]
-    return p
-
-
-def ring_area(p):
-    """Signed area of a ring (positive = counter-clockwise)."""
-    x, y = p[:, 0], p[:, 1]
-    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
-
-
-def ccw(p):
-    """OSM rings come in arbitrary order (Lujiazui is 572 CCW / 148 CW); the
-    wall/roof/floor winding below is only outward-facing for a CCW ring."""
-    return p[::-1] if ring_area(p) < 0 else p
-
-
-def viewpoint(ren, cam):
-    """Give a Viewer4D the same view the offscreen render uses.
-
-    Viewer4D never fits its camera: the renderer starts at VTK's default
-    position (0, 0, 1) looking down -z, i.e. 1 m above the model origin with
-    the whole city behind the near plane, and start() latches that as the
-    initial view (so the `r` hotkey restores the empty one).  render_to_png()
-    ends with ren.ResetCamera(), which keeps only a camera's *direction* and
-    view-up, so copy those across and let the renderer refit the distance.
-    """
-    vcam = ren.GetActiveCamera()
-    vcam.SetPosition(*cam.GetPosition())
-    vcam.SetFocalPoint(*cam.GetFocalPoint())
-    vcam.SetViewUp(*cam.GetViewUp())
-    ren.ResetCamera()
-    ren.ResetCameraClippingRange()
 
 
 def main():
@@ -122,7 +69,6 @@ def main():
              for n in root.findall("node")}
     lat0 = (BBOX[1] + BBOX[3]) / 2
     lon0 = (BBOX[0] + BBOX[2]) / 2
-    coslat = math.cos(math.radians(lat0))
 
     ways = rels = 0
     buildings = []
@@ -138,145 +84,54 @@ def main():
         p = clean(np.asarray(pts))
         if len(p) < 3:
             continue
-        p = ccw(p)
-        h, src = height_of(tags)
-        buildings.append((w.get("id"), p, h, src, tags))
+        h, src = height_of(tags, DEFAULT_LEVELS,
+                           height_range=HEIGHT_RANGE, levels_range=LEVELS_RANGE)
+        buildings.append(Building(
+            "b" + w.get("id"), ccw(p), h, src,
+            {"osm_way": w.get("id"), "name": tags.get("name"),
+             "name_en": tags.get("name:en"), "building": tags.get("building", "yes")}))
     for rel in root.findall("relation"):
         if any(t.get("k") == "building" for t in rel.findall("tag")):
             rels += 1
 
-    def enu(p):
-        return np.c_[(p[:, 0] - lon0) * M_PER_DEG_LAT * coslat,
-                     (p[:, 1] - lat0) * M_PER_DEG_LAT]
-
-    buildings.sort(key=lambda b: -b[2])
-    heights = np.array([b[2] for b in buildings])
+    buildings.sort(key=lambda b: -b.height)
+    heights = np.array([b.height for b in buildings])
     srcs = {}
     for b in buildings:
-        srcs[b[3]] = srcs.get(b[3], 0) + 1
+        srcs[b.source] = srcs.get(b.source, 0) + 1
     print(f"OSM ways {ways}, building multipolygon relations skipped {rels}")
     print(f"buildings {len(buildings)} | height source {srcs}")
     print(f"height m: max {heights.max():.0f} med {np.median(heights):.0f}")
     print("tallest:")
-    for wid, p, h, src, tags in buildings[:12]:
-        name = tags.get("name") or tags.get("name:en") or "(unnamed)"
-        print(f"  {h:6.1f} m  {name[:44]:44s} {tags.get('building')} [{src}]")
+    for b in buildings[:12]:
+        name = b.attrs["name"] or b.attrs["name_en"] or "(unnamed)"
+        print(f"  {b.height:6.1f} m  {name[:44]:44s} {b.attrs['building']} [{b.source}]")
 
-    # ---- CityJSON ----
-    scale = [1e-7, 1e-7, 0.001]
-    translate = [round(lon0, 5), round(lat0, 5), 0.0]
-    verts, vmap, cos = [], {}, {}
-
-    def vid(lon, lat, z):
-        key = (round((lon - translate[0]) / scale[0]),
-               round((lat - translate[1]) / scale[1]), round(z / scale[2]))
-        if key not in vmap:
-            vmap[key] = len(verts)
-            verts.append([int(key[0]), int(key[1]), int(key[2])])
-        return vmap[key]
-
-    for wid, p, h, src, tags in buildings:
-        lon = p[:, 0]
-        lat = p[:, 1]
-        n = len(p)
-        bot = [vid(lon[i], lat[i], 0.0) for i in range(n)]
-        top = [vid(lon[i], lat[i], h) for i in range(n)]
-        surfaces = ([bot[::-1]]                                 # floor, normal down
-                    + [[bot[i], bot[(i + 1) % n],
-                        top[(i + 1) % n], top[i]] for i in range(n)]   # walls, out
-                    + [top])                                    # roof, normal up
-        cos["b" + wid] = {"type": "Building",
-                          "attributes": {"height_m": round(h, 2), "height_source": src,
-                                         "osm_way": wid, "name": tags.get("name"),
-                                         "name_en": tags.get("name:en"),
-                                         "building": tags.get("building", "yes")},
-                          "geometry": [{"type": "Solid", "lod": "1",
-                                        "boundaries": [surfaces]}]}
-    cj = {"type": "CityJSON", "version": "1.1",
-          "transform": {"scale": scale, "translate": translate},
-          "metadata": {"referenceSystem": "https://www.opengis.net/def/crs/EPSG/0/4326",
-                       "title": "Lujiazui, Pudong, Shanghai - LoD1 from OSM"},
-          "CityObjects": cos, "vertices": verts}
-    cj_path = HERE / "pudong_lod1.city.json"
-    cj_path.write_text(json.dumps(cj, separators=(",", ":")))
-    print(f"CityJSON: {len(cos)} solids, {len(verts)} vertices, "
-          f"{cj_path.stat().st_size/1e6:.2f} MB")
+    write_cityjson(HERE / "pudong_lod1.city.json",
+                   "Lujiazui, Pudong, Shanghai - LoD1 from OSM", buildings,
+                   lon0, lat0)
 
     # ---- render ----
     norm = LogNorm(max(heights.min(), 3.0), heights.max())
     cmap = colormaps["turbo"]
-    pts, cells, cols = vtk.vtkPoints(), vtk.vtkCellArray(), []
-    for wid, p, h, src, tags in buildings:
-        e = enu(p)                                # p is CCW, so all normals point out
-        n = len(e)
-        bot = [pts.InsertNextPoint(e[i, 0], e[i, 1], 0.0) for i in range(n)]
-        top = [pts.InsertNextPoint(e[i, 0], e[i, 1], h) for i in range(n)]
-        r, g, b, _ = cmap(norm(h))
-        rgb = (int(r * 255), int(g * 255), int(b * 255), 255)
-        for i in range(n):                        # walls
-            j = (i + 1) % n
-            ids = vtk.vtkIdList()
-            for k in (bot[i], bot[j], top[j], top[i]):
-                ids.InsertNextId(k)
-            cells.InsertNextCell(ids)
-            cols.append(rgb)
-        ids = vtk.vtkIdList()                     # roof
-        for k in top:
-            ids.InsertNextId(k)
-        cells.InsertNextCell(ids)
-        cols.append(rgb)
-        ids = vtk.vtkIdList()                     # floor: closes the shell
-        for k in reversed(bot):
-            ids.InsertNextId(k)
-        cells.InsertNextCell(ids)
-        cols.append(rgb)
-
-    pd = vtk.vtkPolyData()
-    pd.SetPoints(pts)
-    pd.SetPolys(cells)
-    rgba = vtk.vtkUnsignedCharArray()
-    rgba.SetNumberOfComponents(4)
-    rgba.SetName("colors")
-    for c in cols:
-        rgba.InsertNextTuple4(*c)
-    pd.GetCellData().SetScalars(rgba)
-
-    fe = vtk.vtkFeatureEdges()                    # 0 boundary edges = closed shells
-    fe.SetInputData(pd)
-    fe.BoundaryEdgesOn()
-    fe.FeatureEdgesOff()
-    fe.NonManifoldEdgesOff()
-    fe.ManifoldEdgesOff()
-    fe.Update()
-    n_open = fe.GetOutput().GetNumberOfCells()
+    rgbs = [tuple(int(c * 255) for c in cmap(norm(b.height))[:3]) + (255,)
+            for b in buildings]
+    pd, actor, spans = lod1_scene([enu(b.ring, lon0, lat0) for b in buildings],
+                                  heights, rgbs)
+    n_open = n_boundary_edges(pd)             # 0 boundary edges = closed shells
     print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "
           f"({'watertight' if n_open == 0 else 'NOT watertight'})")
 
-    mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputData(pd)
-    mapper.SetScalarModeToUseCellData()
-    mapper.SetColorModeToDirectScalars()
-    mapper.SetScalarRange(0, 255)
-    actor = vtk.vtkActor()
-    actor.SetMapper(mapper)
-    prop = actor.GetProperty()
-    prop.SetEdgeVisibility(1)
-    prop.SetEdgeColor(0.03, 0.03, 0.05)
-    prop.SetLineWidth(0.4)
-    prop.SetAmbient(0.35)
-    prop.SetDiffuse(0.85)
-
     # frame the supertall cluster, not the whole bbox: the towers are a small
     # part of the 2.3 x 1.9 km window and look lost when the bbox is fitted
-    cluster = np.vstack([enu(p).mean(axis=0) for _, p, _, _, _ in buildings[:20]])
+    rings = [enu(b.ring, lon0, lat0) for b in buildings]
+    cluster = np.vstack([e.mean(axis=0) for e in rings[:20]])
     cx, cy = cluster[:, 0].mean(), cluster[:, 1].mean()
     span = 0.72 * max(heights.max(),
                       np.ptp(enu(np.array([[BBOX[0], BBOX[1]],
-                                           [BBOX[2], BBOX[3]]])), axis=0).max())
-    cam = vtk.vtkCamera()
-    cam.SetFocalPoint(cx, cy, 0.30 * span)
-    cam.SetPosition(cx + 0.62 * span, cy - 0.95 * span, 0.58 * span)
-    cam.SetViewUp(0, 0, 1)
+                                           [BBOX[2], BBOX[3]]]), lon0, lat0),
+                             axis=0).max())
+    cam = oblique_camera(cx, cy, span, z_focus=0.30, dx=0.62, dy=-0.95, dz=0.58)
     # NOTE: only the camera's *direction* and view-up survive --
     # render_to_png() ends with ren.ResetCamera(), which recomputes the distance
     # from the current view angle and therefore cancels any SetPosition radius
@@ -294,14 +149,7 @@ def main():
         return 0
 
     render_to_png([actor], args.png, size=(W, H), camera=cam)
-
-    import imageio.v2 as iio
-    img = iio.imread(args.png).reshape(-1, 3)
-    uniq = len(np.unique(img, axis=0))
-    bg = np.abs(img.astype(int) - [38, 38, 38]).sum(1) <= 12
-    print(f"PNG {args.png}: {W}x{H}, {pd.GetNumberOfPoints()} points, "
-          f"{pd.GetNumberOfPolys()} faces, unique colours {uniq}, "
-          f"non-background {1 - bg.mean():.3f}")
+    png_stats(args.png, (W, H), pd)
     return 0
 
 

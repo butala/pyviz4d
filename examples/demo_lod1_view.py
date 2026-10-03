@@ -47,7 +47,11 @@ def build_actor(cityjson_path, colour_by="height"):
         r, g, b, _ = cmap(norm(h))
         rgb = (int(r * 255), int(g * 255), int(b * 255), 255)
         for surface in o["geometry"][0]["boundaries"][0]:
-            ring = surface if isinstance(surface[0], int) else surface[0]
+            # Solid nesting is boundaries -> shell -> surface -> ring, so a
+            # surface is [ring].  (demo_lod1_* all write that now; an older
+            # generation wrote the ring where the surface belongs and needed a
+            # special case here.)
+            ring = surface[0]
             ids = vtk.vtkIdList()
             for vi in ring:
                 ids.InsertNextId(pts.InsertNextPoint(*xyz[vi]))

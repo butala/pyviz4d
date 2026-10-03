@@ -9,16 +9,17 @@ Open City Model publishes LoD1 CityJSON for every US county on S3 (no AWS
 account needed); Champaign County is Illinois/17019, ~68 MB across two files.
 Each Building carries an extruded Solid, so unlike the OSM generators this one
 needs no footprints or heights of its own -- it reads them, keeps the campus
-bbox, and rebuilds the shells so the winding is outward-facing throughout.
-WGS84 (EPSG:4979) throughout; local ENU metres for the geometry.
+bbox, and rebuilds the shells so the winding is outward-facing throughout
+(shared machinery in ``_lod1.py``).  WGS84 (EPSG:4979) throughout; local ENU
+metres for the geometry.
 
 Reading the solids as they stand is not quite enough.  OCM's winding is not
 uniform: almost all of these solids are already outward, but a few per cent
 arrive inside-out, so rather than trust the source the script re-winds each
-footprint ring outward (see ccw()).  A handful of rings also touch themselves
--- the footprint simplification runs out to a vertex and straight back,
-enclosing a sliver a few cm^2 in area -- which leaves the closed shell
-non-manifold; those lobes are cut out (see despike()).
+footprint ring outward (``ccw``).  A handful of rings also touch themselves --
+the footprint simplification runs out to a vertex and straight back, enclosing
+a sliver a few cm^2 in area -- which leaves the closed shell non-manifold;
+those lobes are cut out (``despike``).
 
 ``--highlight ece`` paints the ECE Building magenta (matched to its OSM centre
 within 9 m) and ``h`` toggles it live under ``--interactive``.  The colour is
@@ -44,6 +45,10 @@ import vtk
 from matplotlib import colormaps
 from matplotlib.colors import LogNorm
 
+from _lod1 import (Building, M_PER_DEG_LAT, ccw, despike, enu, lod1_scene,
+                   n_boundary_edges, oblique_camera, png_stats, viewpoint,
+                   write_cityjson)
+
 HERE = Path(__file__).resolve().parents[1] / "data" / "uiuc"
 HERE.mkdir(parents=True, exist_ok=True)
 BUCKET = "https://opencitymodel.s3.amazonaws.com"
@@ -52,7 +57,6 @@ SHARDS = ("Illinois-17019-000.json", "Illinois-17019-001.json")
 # Main Quad (40.1095, -88.2272) with the engineering campus west and Campustown east
 BBOX = (-88.2400, 40.1000, -88.2160, 40.1200)    # lon0, lat0, lon1, lat1
 UA = {"User-Agent": "pyviz4d-uiuc/0.1 (research)"}
-M_PER_DEG_LAT = 110574.0
 MIN_HEIGHT = 2.0
 
 # Landmarks that --highlight can pick out, as (lat, lon) of the building's
@@ -72,100 +76,8 @@ def fetch(name):
     return json.loads(cache.read_text())
 
 
-def clean(p):
-    """Drop repeated vertices; OCM rounds footprints to ~1e-6 deg (0.1 m), so
-    neighbours in a ring can coincide exactly.
-
-    Compare with an ABSOLUTE tolerance.  ``np.allclose``'s default relative
-    tolerance is 1e-5, which on a longitude of -88.23 deg is ~78 m -- big enough
-    to delete a small building's whole outline and silently drop it (this cost
-    the UIUC ingest 1109 of 1801 buildings before it was caught).
-    """
-    dup = dict(rtol=0.0, atol=1e-9)            # 1e-9 deg ~ 0.1 mm
-    if len(p) > 1 and np.allclose(p[0], p[-1], **dup):
-        p = p[:-1]
-    keep = np.r_[True, (np.abs(np.diff(p, axis=0)).sum(1) > 1e-9)]
-    p = p[keep]
-    if len(p) > 1 and np.allclose(p[0], p[-1], **dup):
-        p = p[:-1]
-    return p
-
-
-def ring_area(p):
-    """Signed area of a ring (positive = counter-clockwise)."""
-    x, y = p[:, 0], p[:, 1]
-    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
-
-
-# A lobe this small (m^2) is OCM's 1e-6 deg rounding, not a wing.  Champaign
-# County has four of them, in two buildings, at 0.000 and 0.025 m^2.
-MIN_LOBE_M2 = 0.1
-
-
-def despike(p, min_lobe=MIN_LOBE_M2):
-    """Cut the zero-area out-and-back excursions out of a footprint ring.
-
-    OCM's footprints are snapped to a 1e-6 deg grid, and the snapping sometimes
-    makes a ring touch itself: it walks out to a vertex and comes straight back
-    (sometimes with a vertex or two on the return leg), leaving a sliver of a
-    few cm^2.  Reproduced literally such a ring gives a non-manifold shell --
-    two opposite-facing wall quads share an edge with the real wall, so that
-    edge borders four faces, and the coincident quads z-fight in the renderer.
-    vtk still counts the shell as watertight; a directed-edge check does not.
-
-    A ring visited twice at one point splits into two lobes; cut whichever
-    encloses (almost) no area and keep the other.  A genuine figure-of-eight
-    footprint has lobes of hundreds of m^2 and is left alone.
-    """
-    p = clean(np.asarray(p, float))
-    while len(p) >= 3:
-        nxt = None
-        for i in range(len(p)):
-            for j in range(i + 2, len(p)):
-                if np.hypot(*(p[i] - p[j])) > 1e-9:
-                    continue                  # p[i], p[j] are different points
-                fwd, rev = p[i:j + 1], np.r_[p[j:], p[:i + 1]]
-                if abs(ring_area(fwd)) <= min_lobe:
-                    nxt = rev                 # drop the out-and-back
-                elif abs(ring_area(rev)) <= min_lobe:
-                    nxt = fwd                 # drop its complement
-                if nxt is not None:
-                    break
-            if nxt is not None:
-                break
-        if nxt is None:
-            return p                          # no degenerate lobe left
-        p = clean(nxt)                        # both candidates are strictly shorter
-    return p
-
-
-def ccw(p):
-    """OCM does not wind its footprint rings consistently -- most are already
-    counter-clockwise, a few per cent are clockwise -- so normalise: the
-    floor/wall/roof construction below is only outward-facing for a
-    counter-clockwise ring."""
-    return p[::-1] if ring_area(p) < 0 else p
-
-
-def viewpoint(ren, cam):
-    """Give a Viewer4D the same view the offscreen render uses.
-
-    Viewer4D never fits its camera: the renderer starts at VTK's default
-    position (0, 0, 1) looking down -z, and start() latches that as the initial
-    view (so the `r` hotkey restores the empty one).  render_to_png() ends with
-    ren.ResetCamera(), which keeps only a camera's *direction* and view-up, so
-    copy those across and let the renderer refit the distance.
-    """
-    vcam = ren.GetActiveCamera()
-    vcam.SetPosition(*cam.GetPosition())
-    vcam.SetFocalPoint(*cam.GetFocalPoint())
-    vcam.SetViewUp(*cam.GetViewUp())
-    ren.ResetCamera()
-    ren.ResetCameraClippingRange()
-
-
 def ingest(max_height):
-    """Campus buildings as (footprint lon/lat ring, height, source, attributes)."""
+    """Campus buildings as Building records (CCW lon/lat ring, height, source)."""
     buildings, dropped, srcs, total = [], 0, {}, 0
     for name in SHARDS:
         data = fetch(name)
@@ -194,7 +106,11 @@ def ingest(max_height):
                 continue
             src = a.get("height_source", "?")
             srcs[src] = srcs.get(src, 0) + 1
-            buildings.append((oid, ccw(p), h, src, a))
+            buildings.append(Building(
+                "ocm" + oid, ccw(p), h, src,
+                {"footprint_source": a.get("fp_source"),
+                 "footprint_area_m2": round(a.get("area", 0.0), 1),
+                 "ubid": a.get("ubid"), "ocm_id": oid}))
     return buildings, total, dropped, srcs
 
 
@@ -218,118 +134,32 @@ def main():
     buildings, total, dropped, srcs = ingest(args.max_height)
     lat0 = (BBOX[1] + BBOX[3]) / 2
     lon0 = (BBOX[0] + BBOX[2]) / 2
-    coslat = math.cos(math.radians(lat0))
 
-    buildings.sort(key=lambda b: -b[2])
-    heights = np.array([b[2] for b in buildings])
+    buildings.sort(key=lambda b: -b.height)
+    heights = np.array([b.height for b in buildings])
     print(f"Open City Model {PREFIX}: {total} buildings in bbox, "
           f"{dropped} skipped, {len(buildings)} kept")
     print(f"height source {srcs}")
     print(f"height m: min {heights.min():.1f} med {np.median(heights):.1f} "
           f"max {heights.max():.1f}")
     print("tallest:")
-    for oid, p, h, src, a in buildings[:10]:
-        print(f"  {h:6.1f} m  {len(p):3d}-gon {a.get('area', 0):7.0f} m2  "
-              f"ubid {a.get('ubid')}  [{src}]")
+    for b in buildings[:10]:
+        print(f"  {b.height:6.1f} m  {len(b.ring):3d}-gon "
+              f"{b.attrs['footprint_area_m2']:7.0f} m2  "
+              f"ubid {b.attrs['ubid']}  [{b.source}]")
 
-    def enu(p):
-        return np.c_[(p[:, 0] - lon0) * M_PER_DEG_LAT * coslat,
-                     (p[:, 1] - lat0) * M_PER_DEG_LAT]
-
-    # ---- CityJSON ----
-    scale = [1e-7, 1e-7, 0.001]
-    translate = [round(lon0, 5), round(lat0, 5), 0.0]
-    verts, vmap, cos = [], {}, {}
-
-    def vid(lon, lat, z):
-        key = (round((lon - translate[0]) / scale[0]),
-               round((lat - translate[1]) / scale[1]), round(z / scale[2]))
-        if key not in vmap:
-            vmap[key] = len(verts)
-            verts.append([int(key[0]), int(key[1]), int(key[2])])
-        return vmap[key]
-
-    for oid, p, h, src, a in buildings:
-        n = len(p)
-        bot = [vid(p[i, 0], p[i, 1], 0.0) for i in range(n)]
-        top = [vid(p[i, 0], p[i, 1], h) for i in range(n)]
-        # CityJSON nests a Solid as boundaries = [shell], shell = [surface],
-        # surface = [ring], so each surface here is a one-element list.  (The
-        # three OSM generators write boundaries = [surface, ...] instead, one
-        # level short; demo_lod1_view.py tolerates both, read_cityjson does not.)
-        surfaces = ([[bot[::-1]]]                               # floor, normal down
-                    + [[[bot[i], bot[(i + 1) % n],
-                         top[(i + 1) % n], top[i]]] for i in range(n)]  # walls, out
-                    + [[top]])                                  # roof, normal up
-        cos["ocm" + oid] = {"type": "Building",
-                            "attributes": {"height_m": round(h, 2),
-                                           "height_source": src,
-                                           "footprint_source": a.get("fp_source"),
-                                           "footprint_area_m2": round(a.get("area", 0.0), 1),
-                                           "ubid": a.get("ubid"),
-                                           "ocm_id": oid},
-                            "geometry": [{"type": "Solid", "lod": "1",
-                                          "boundaries": [surfaces]}]}
-    cj = {"type": "CityJSON", "version": "1.1",
-          "transform": {"scale": scale, "translate": translate},
-          "metadata": {"referenceSystem": "https://www.opengis.net/def/crs/EPSG/0/4326",
-                       "title": "UIUC campus, Urbana-Champaign IL - LoD1 from Open City Model"},
-          "CityObjects": cos, "vertices": verts}
-    cj_path = HERE / "uiuc_lod1.city.json"
-    cj_path.write_text(json.dumps(cj, separators=(",", ":")))
-    print(f"CityJSON: {len(cos)} solids, {len(verts)} vertices, "
-          f"{cj_path.stat().st_size/1e6:.2f} MB")
+    write_cityjson(HERE / "uiuc_lod1.city.json",
+                   "UIUC campus, Urbana-Champaign IL - LoD1 from Open City Model",
+                   buildings, lon0, lat0)
 
     # ---- render ----
     norm = LogNorm(max(heights.min(), 3.0), heights.max())
     cmap = colormaps["turbo"]
-    pts, cells, cols = vtk.vtkPoints(), vtk.vtkCellArray(), []
-    spans = []                                    # each building's cell range
-    for oid, p, h, src, a in buildings:
-        c0 = cells.GetNumberOfCells()
-        e = enu(p)                                # p is CCW, so all normals point out
-        n = len(e)
-        bot = [pts.InsertNextPoint(e[i, 0], e[i, 1], 0.0) for i in range(n)]
-        top = [pts.InsertNextPoint(e[i, 0], e[i, 1], h) for i in range(n)]
-        r, g, b, _ = cmap(norm(h))
-        rgb = (int(r * 255), int(g * 255), int(b * 255), 255)
-        for i in range(n):                        # walls
-            j = (i + 1) % n
-            ids = vtk.vtkIdList()
-            for k in (bot[i], bot[j], top[j], top[i]):
-                ids.InsertNextId(k)
-            cells.InsertNextCell(ids)
-            cols.append(rgb)
-        ids = vtk.vtkIdList()                     # roof
-        for k in top:
-            ids.InsertNextId(k)
-        cells.InsertNextCell(ids)
-        cols.append(rgb)
-        ids = vtk.vtkIdList()                     # floor: closes the shell
-        for k in reversed(bot):
-            ids.InsertNextId(k)
-        cells.InsertNextCell(ids)
-        cols.append(rgb)
-        spans.append((c0, cells.GetNumberOfCells()))
-
-    pd = vtk.vtkPolyData()
-    pd.SetPoints(pts)
-    pd.SetPolys(cells)
-    rgba = vtk.vtkUnsignedCharArray()
-    rgba.SetNumberOfComponents(4)
-    rgba.SetName("colors")
-    for c in cols:
-        rgba.InsertNextTuple4(*c)
-    pd.GetCellData().SetScalars(rgba)
-
-    fe = vtk.vtkFeatureEdges()                    # 0 boundary edges = closed shells
-    fe.SetInputData(pd)
-    fe.BoundaryEdgesOn()
-    fe.FeatureEdgesOff()
-    fe.NonManifoldEdgesOff()
-    fe.ManifoldEdgesOff()
-    fe.Update()
-    n_open = fe.GetOutput().GetNumberOfCells()
+    rgbs = [tuple(int(c * 255) for c in cmap(norm(b.height))[:3]) + (255,)
+            for b in buildings]
+    pd, actor, spans = lod1_scene([enu(b.ring, lon0, lat0) for b in buildings],
+                                  heights, rgbs)
+    n_open = n_boundary_edges(pd)             # 0 boundary edges = closed shells
     print(f"shells: {len(buildings)} buildings, {n_open} boundary edges "
           f"({'watertight' if n_open == 0 else 'NOT watertight'})")
 
@@ -349,21 +179,21 @@ def main():
     hi, hi_span = None, None
     if not args.no_highlight:
         lat, lon = LANDMARKS[args.highlight]
-        want = np.array([(lon - lon0) * M_PER_DEG_LAT * coslat,
+        want = np.array([(lon - lon0) * M_PER_DEG_LAT * math.cos(math.radians(lat0)),
                          (lat - lat0) * M_PER_DEG_LAT])
-        near = [np.hypot(*(enu(b[1]).mean(0) - want)) for b in buildings]
+        rings = [enu(b.ring, lon0, lat0) for b in buildings]
+        near = [np.hypot(*(e.mean(0) - want)) for e in rings]
         k = int(np.argmin(near))
-        oid, p, h, src, a = buildings[k]
-        print(f"highlight {args.highlight}: ubid {a.get('ubid')} "
-              f"({h:.1f} m, {a.get('area', 0):.0f} m2), {near[k]:.0f} m from "
-              f"the landmark")
+        b = buildings[k]
+        print(f"highlight {args.highlight}: ubid {b.attrs['ubid']} "
+              f"({b.height:.1f} m, {b.attrs['footprint_area_m2']:.0f} m2), "
+              f"{near[k]:.0f} m from the landmark")
 
         hi_span = spans[k]                       # the cells to recolour
-
-        cx, cy = enu(p).mean(0)                  # a pole, so the pick reads
+        cx, cy = rings[k].mean(0)                # a pole, so the pick reads
         ppt = vtk.vtkPoints()                    # from any angle and any zoom
-        ppt.InsertNextPoint(cx, cy, h)
-        ppt.InsertNextPoint(cx, cy, h + 0.35 * heights.max())
+        ppt.InsertNextPoint(cx, cy, b.height)
+        ppt.InsertNextPoint(cx, cy, b.height + 0.35 * heights.max())
         pole = vtk.vtkCellArray()
         pl = vtk.vtkIdList()
         pl.InsertNextId(0)
@@ -382,25 +212,12 @@ def main():
         hp.SetAmbient(1.0)
         hp.SetDiffuse(0.0)
 
-    mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputData(pd)
-    mapper.SetScalarModeToUseCellData()
-    mapper.SetColorModeToDirectScalars()
-    mapper.SetScalarRange(0, 255)
-    actor = vtk.vtkActor()
-    actor.SetMapper(mapper)
-    prop = actor.GetProperty()
-    prop.SetEdgeVisibility(1)
-    prop.SetEdgeColor(0.03, 0.03, 0.05)
-    prop.SetLineWidth(0.4)
-    prop.SetAmbient(0.35)
-    prop.SetDiffuse(0.85)
-
     # ---- the `h` toggle ----
     # Recolour the landmark's cells inside the base actor's one scalar array,
     # rather than showing or hiding a second copy of its faces: the copy was the
     # flicker.  ``rgba.Modified()`` bumps the array's MTime, which is what makes
     # the mapper (DirectScalars) re-read the colours on the next Render.
+    rgba = pd.GetCellData().GetScalars()
     hi_base = tuple(rgba.GetTuple4(hi_span[0])) if hi_span else None
 
     def paint_highlight(on):
@@ -417,13 +234,10 @@ def main():
 
     # a flat campus needs a low, oblique eye: ~55 deg azimuth, ~25 deg elevation
     span = max(np.ptp(enu(np.array([[BBOX[0], BBOX[1]],
-                                    [BBOX[2], BBOX[3]]])), axis=0).max(),
+                                    [BBOX[2], BBOX[3]]]), lon0, lat0),
+                      axis=0).max(),
                heights.max())
-    cx, cy = 0.0, 0.0                         # the bbox centre is the ENU origin
-    cam = vtk.vtkCamera()
-    cam.SetFocalPoint(cx, cy, 0.04 * span)
-    cam.SetPosition(cx + 0.62 * span, cy - 0.88 * span, 0.34 * span)
-    cam.SetViewUp(0, 0, 1)
+    cam = oblique_camera(0.0, 0.0, span, z_focus=0.04, dx=0.62, dy=-0.88, dz=0.34)
     # NOTE: only the camera's *direction* and view-up survive --
     # render_to_png() ends with ren.ResetCamera(), which recomputes the distance
     # from the current view angle and therefore cancels any SetPosition radius
@@ -454,14 +268,7 @@ def main():
 
     render_to_png([actor] + ([hi] if hi is not None else []),
                   args.png, size=(W, H), camera=cam)
-
-    import imageio.v2 as iio
-    img = iio.imread(args.png).reshape(-1, 3)
-    uniq = len(np.unique(img, axis=0))
-    bg = np.abs(img.astype(int) - [38, 38, 38]).sum(1) <= 12
-    print(f"PNG {args.png}: {W}x{H}, {pd.GetNumberOfPoints()} points, "
-          f"{pd.GetNumberOfPolys()} faces, unique colours {uniq}, "
-          f"non-background {1 - bg.mean():.3f}")
+    png_stats(args.png, (W, H), pd)
     return 0
 
 

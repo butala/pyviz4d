@@ -304,6 +304,25 @@ def _render_window_to_png(ren_win, path, scale=1):
     return str(path)
 
 
+def viewpoint(ren, cam):
+    """Give an interactive renderer the same view ``render_to_png`` would use.
+
+    ``Viewer4D`` never fits its camera: the renderer starts at VTK's default
+    position (0, 0, 1) looking down -z, i.e. 1 m above the model origin with
+    the whole scene behind the near plane, and :meth:`Viewer4D.start` latches
+    that as the initial view (so the ``r`` hotkey restores the empty one).
+    :func:`render_to_png` ends with ``ren.ResetCamera()``, which keeps only a
+    camera's *direction* and view-up and refits the distance, so copy those
+    across and let the interactive renderer refit too.
+    """
+    vcam = ren.GetActiveCamera()
+    vcam.SetPosition(*cam.GetPosition())
+    vcam.SetFocalPoint(*cam.GetFocalPoint())
+    vcam.SetViewUp(*cam.GetViewUp())
+    ren.ResetCamera()
+    ren.ResetCameraClippingRange()
+
+
 def render_to_png(actors, path, size=(800, 600), scale=1,
                   bg_color=(0.15, 0.15, 0.15), camera=None):
     """Render ``actors`` offscreen and write a PNG to ``path``.
