@@ -65,11 +65,13 @@ def register_plume_colormaps():
     from matplotlib.colors import LinearSegmentedColormap
     if "plume_gold" not in matplotlib.colormaps():
         matplotlib.colormaps.register(LinearSegmentedColormap.from_list("plume_gold", [
-            (0.00, (0.015, 0.010, 0.045)),  # cool near-black shadow
-            (0.18, (0.28, 0.04, 0.13)),     # ember
-            (0.45, (0.86, 0.30, 0.05)),     # orange
-            (0.72, (1.00, 0.74, 0.14)),     # gold
-            (1.00, (1.00, 0.98, 0.90)),     # white-hot core
+            (0.00, (0.16, 0.05, 0.02)),     # dark amber -- a warm floor, so the
+            #    faint rising column glows instead of vanishing
+            (0.14, (0.34, 0.09, 0.02)),    # deep amber
+            (0.38, (0.78, 0.32, 0.04)),     # orange
+            (0.58, (1.00, 0.66, 0.08)),     # gold
+            (0.78, (1.00, 0.90, 0.45)),     # bright gold
+            (1.00, (1.00, 1.00, 0.95)),     # white hot
         ]))
     if "plume_gray" not in matplotlib.colormaps():
         matplotlib.colormaps.register(LinearSegmentedColormap.from_list("plume_gray", [
@@ -177,9 +179,9 @@ def build_scene(log_display, sm_iso, spacing, origin, shape, args):
         prop.SetGradientOpacity(gop)
     prop.ShadeOn()
     prop.SetInterpolationTypeToLinear()
-    prop.SetAmbient(0.25)
-    prop.SetDiffuse(0.95)
-    prop.SetSpecular(0.55)
+    prop.SetAmbient(0.45)
+    prop.SetDiffuse(0.80)
+    prop.SetSpecular(0.45)
     prop.SetSpecularPower(48)
 
     volume = vtk.vtkVolume()
@@ -195,18 +197,40 @@ def build_scene(log_display, sm_iso, spacing, origin, shape, args):
         contour.SetInputData(iso_img)
         contour.ComputeNormalsOn()
         contour.SetValue(0, iso_val)
+        # Fill the holes.  Where the smoothed field dips back below the
+        # isovalue the shell opens up and you see the background through it --
+        # one such hole rendered as a hard-edged dark disc sitting inside the
+        # plume, which read as an artefact rather than as structure.
+        fill = vtk.vtkFillHolesFilter()
+        fill.SetInputConnection(contour.GetOutputPort())
+        fill.SetHoleSize(1000.0)
+        # ...and then relax it.  Filling a hole leaves a flat cap, and a flat
+        # cap shades as a uniform ellipse -- which is what that hard-edged dark
+        # disc on the plume actually was.  Smoothing rounds the cap back into
+        # the shell.
+        relax = vtk.vtkSmoothPolyDataFilter()
+        relax.SetInputConnection(fill.GetOutputPort())
+        relax.SetNumberOfIterations(80)
+        relax.SetFeatureAngle(45.0)
+        relax.SetEdgeAngle(15.0)
+        relax.SetFeatureEdgeSmoothing(1)
+        relax.BoundarySmoothingOff()
+        relax.Update()
         cmap = vtk.vtkPolyDataMapper()
-        cmap.SetInputConnection(contour.GetOutputPort())
+        cmap.SetInputConnection(relax.GetOutputPort())
         cmap.ScalarVisibilityOff()
         iso = vtk.vtkActor()
         iso.SetMapper(cmap)
         p = iso.GetProperty()
         p.SetColor(*args.iso_color)
         p.SetOpacity(args.iso_opacity)
-        p.SetAmbient(0.6)
-        p.SetDiffuse(0.6)
-        p.SetSpecular(0.5)
-        p.SetSpecularPower(40)
+        # Flat and barely specular: a translucent veil.  A strong specular
+        # highlight turns the shell into a moulded plastic blob and it swallows
+        # the volume behind it.
+        p.SetAmbient(0.85)
+        p.SetDiffuse(0.35)
+        p.SetSpecular(0.12)
+        p.SetSpecularPower(30)
         actors.append(iso)
 
     # 3. Green plume centreline ----------------------------------------------
@@ -235,8 +259,11 @@ def build_scene(log_display, sm_iso, spacing, origin, shape, args):
             centre = vtk.vtkActor()
             centre.SetMapper(tm)
             centre.GetProperty().SetColor(*args.centerline_color)
-            centre.GetProperty().SetAmbient(0.6)
-            centre.GetProperty().SetDiffuse(0.6)
+            # Unlit and slightly transparent: a bright opaque tube reads as a
+            # stripe glued to the picture rather than as the plume's axis.
+            centre.GetProperty().SetAmbient(1.0)
+            centre.GetProperty().SetDiffuse(0.0)
+            centre.GetProperty().SetOpacity(0.55)
             actors.append(centre)
 
     bounds = (origin[0], origin[0] + (shape[0] - 1) * spacing[0],
@@ -478,32 +505,32 @@ def main():
     p.add_argument("--sigma-iso", type=float, default=2.2, help="smoothing for envelope + centreline")
     p.add_argument("--sigma-display", type=float, default=1.0, help="smoothing for the volume")
     p.add_argument("--prune-frac", type=float, default=0.30, help="drop components below this frac of the largest")
-    p.add_argument("--opacity-power", type=float, default=1.7,
+    p.add_argument("--opacity-power", type=float, default=1.35,
                    help=">1 keeps the pale interior transparent and reserves "
                         "opacity for the dense core")
-    p.add_argument("--max-opacity", type=float, default=0.95)
+    p.add_argument("--max-opacity", type=float, default=0.98)
     p.add_argument("--no-gradient-opacity", action="store_true",
                    help="scalar opacity only (gradient opacity is what keeps "
                         "the volume from reading as fog)")
 
-    p.add_argument("--iso-fraction", type=float, default=0.010,
+    p.add_argument("--iso-fraction", type=float, default=0.028,
                    help="envelope level as a fraction of the smoothed field max")
-    p.add_argument("--iso-color", nargs=3, type=float, default=[0.55, 0.70, 0.97])
-    p.add_argument("--iso-opacity", type=float, default=0.17)
+    p.add_argument("--iso-color", nargs=3, type=float, default=[0.70, 0.83, 0.97])
+    p.add_argument("--iso-opacity", type=float, default=0.11)
     p.add_argument("--no-isosurface", action="store_true")
 
-    p.add_argument("--centerline-threshold", type=float, default=0.002,
+    p.add_argument("--centerline-threshold", type=float, default=0.035,
                    help="threshold as a fraction of the smoothed field max")
     p.add_argument("--centerline-window", type=int, default=21)
-    p.add_argument("--centerline-radius", type=float, default=0.08)
-    p.add_argument("--centerline-color", nargs=3, type=float, default=[0.10, 0.80, 0.20])
+    p.add_argument("--centerline-radius", type=float, default=0.022)
+    p.add_argument("--centerline-color", nargs=3, type=float, default=[0.25, 1.00, 0.35])
     p.add_argument("--no-centerline", action="store_true")
 
     p.add_argument("--background", nargs=3, type=float, default=[0.035, 0.035, 0.050],
                    help="near-black by default so the gold reads at full "
                         "contrast; pass 0.52 0.52 0.52 for the paper's grey")
     p.add_argument("--size", nargs=2, type=int, default=[960, 1200])
-    p.add_argument("--zoom", type=float, default=3.0,
+    p.add_argument("--zoom", type=float, default=3.15,
                    help="camera zoom after ResetCamera; the plume is a thin "
                         "column in a mostly empty box, so fit the plume")
     p.add_argument("--no-axis", action="store_true")
